@@ -66,7 +66,8 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
         format_data = {k: (v if v is not None else f"<missing {k}>") for k, v in error_data.items()}
         for f in required:
             if f not in format_data:
-                format_data[f] = f"<missing {f}>"
+                # Patch missing diagnostics with empty string for template safety
+                format_data[f] = "" if f == "diagnostics" else f"<missing {f}>"
         # Append pretty schema to next_steps if present
         next_steps = error_def.get("next_steps", "").format(**format_data)
         if pretty_schema:
@@ -80,7 +81,7 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
                 "severity": "information",
                 "code": "incomplete-context",
                 "diagnostics": extra_diag,
-                "details": "<missing details>"  # TODO: Patch with real details if available
+                "details": "<missing details>"
             }]
     else:
         import logging
@@ -97,15 +98,18 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
             "severity": issue.get("severity", "error"),
             "code": issue.get("code", "unknown"),
             "diagnostics": issue.get("diagnostics", "<missing diagnostics>"),
-            "details": issue.get("details", "<missing details>")  # TODO: Patch with real details if available
+            "details": issue.get("details", "<missing details>")
         })
 
-    return AIXErrorResponse(
+    # Always include supported_param_schema at top level if present
+    response = AIXErrorResponse(
         error=error_text,
         friendly_message=friendly_message,
         next_steps=next_steps,
         resource_type=error_data.get("resource_type"),
         resource_id=error_data.get("resource_id"),
-        status_code=error_data.get("status_code") if error_data.get("status_code") is not None else -1,  # TODO: Patch with real status if available
+        status_code=error_data.get("status_code") if error_data.get("status_code") is not None else -1,
         issues=patched_issues,
     )
+    # Do NOT monkeypatch model_dump; let caller add extra fields after model_dump()
+    return response

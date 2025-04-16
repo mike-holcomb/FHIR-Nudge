@@ -89,6 +89,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
         error_data = {
             "resource_type": resource,
             "status_code": 400,
+            "diagnostics": diagnostics,
             "issues": [{
                 "severity": "error",
                 "code": "invalid-type",
@@ -115,6 +116,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
             "status_code": 400,
             "supported_params": ', '.join(sorted(supported_params)),
             "supported_param_schema": supported_param_objs,
+            "diagnostics": diagnostics,
             "issues": [{
                 "severity": "error",
                 "code": "invalid-param",
@@ -122,26 +124,27 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
             }],
         }
         aix_error = render_error("invalid_param", error_data)
-        # Attach schema at top-level for LLMs/humans
-        resp = jsonify(aix_error.model_dump())
-        resp.json["supported_param_schema"] = supported_param_objs
-        return False, (resp, 400)
+        model = aix_error.model_dump()
+        model["supported_param_schema"] = supported_param_objs
+        return False, (jsonify(model), 400)
     # 3. Empty query check
     if not query_params:
+        diagnostics = f"No query parameters provided. Please specify at least one search parameter for resource '{resource}'."
         error_data = {
             "resource_type": resource,
             "status_code": 400,
             "supported_param_schema": supported_param_objs,
+            "diagnostics": diagnostics,
             "issues": [{
                 "severity": "error",
                 "code": "missing-param",
-                "diagnostics": f"No query parameters provided. Please specify at least one search parameter for resource '{resource}'."
+                "diagnostics": diagnostics
             }],
         }
         aix_error = render_error("missing_param", error_data)
-        resp = jsonify(aix_error.model_dump())
-        resp.json["supported_param_schema"] = supported_param_objs
-        return False, (resp, 400)
+        model = aix_error.model_dump()
+        model["supported_param_schema"] = supported_param_objs
+        return False, (jsonify(model), 400)
     # TODO: Add value format checks, duplicate/conflicting param checks, reserved param warnings, etc.
     return True, None
 
@@ -157,6 +160,7 @@ def read_resource(resource: str, resource_id: str) -> Response:
             "resource_type": resource,
             "resource_id": resource_id,
             "status_code": 400,
+            "diagnostics": diagnostics,
             "issues": [{
                 "severity": "error",
                 "code": "invalid-type",
