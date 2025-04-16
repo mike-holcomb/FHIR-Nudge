@@ -1,13 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import requests
 import difflib
 from dotenv import load_dotenv
 import os
+import re
 
 app = Flask(__name__)
 
 load_dotenv()
 FHIR_SERVER_URL = os.getenv("FHIR_SERVER_URL")
+FHIR_ID_PATTERN = re.compile(r"^[A-Za-z0-9\-\.]{1,64}$")
 
 def load_capability_statement():
     """
@@ -45,8 +47,27 @@ def load_capability_statement():
 capability_index = load_capability_statement()
 
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
-def read_resource(resource, resource_id):
-    # Forward request to FHIR server
+def read_resource(resource: str, resource_id: str) -> Response:
+    # Step 1: Prevalidate resource type
+    valid_types = set(capability_index.keys())
+    if resource not in valid_types:
+        # Fuzzy match for close resource types
+        close = difflib.get_close_matches(resource, valid_types, n=3)
+        msg = {
+            "error": f"Resource type '{resource}' is not supported by the FHIR server.",
+            "supported_types": sorted(valid_types),
+        }
+        if close:
+            msg["did_you_mean"] = close
+        return jsonify(msg), 400
+
+    # Step 2: Validate resource_id format
+    if not FHIR_ID_PATTERN.match(resource_id):
+        return jsonify({
+            "error": "Invalid resource_id format. Must match FHIR id pattern [A-Za-z0-9-\\.]{1,64}."
+        }), 400
+
+    # Step 3: Forward request to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
     resp = requests.get(fhir_url)
     return (resp.content, resp.status_code, resp.headers.items())
