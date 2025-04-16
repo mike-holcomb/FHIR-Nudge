@@ -14,7 +14,7 @@ from fhir_nudge.client import FhirNudgeClient
 
 # Config: Change as needed for your environment
 PROXY_URL = "http://localhost:8888"  # The running Flask proxy
-TEST_PATIENT_ID = "example"  # Replace with a real Patient ID on your FHIR server
+TEST_PATIENT_ID = "S6426560"  # Replace with a real Patient ID on your FHIR server
 
 client = FhirNudgeClient(PROXY_URL)
 
