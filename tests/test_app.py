@@ -51,9 +51,10 @@ def test_read_resource_invalid_id(client, patch_fhir_requests):
     assert "Invalid resource_id format" in resp.json["error"]
 
 def test_read_resource_not_found(client, patch_fhir_requests):
+    original_side_effect = patch_fhir_requests.side_effect
     def resource_side_effect(url, *args, **kwargs):
         if url.endswith("/metadata"):
-            return patch_fhir_requests.side_effect(url)
+            return original_side_effect(url)
         class MockResourceResp:
             status_code = 404
             content = b'{"resourceType": "OperationOutcome", "issue": [{"severity": "error", "code": "not-found"}]}'
