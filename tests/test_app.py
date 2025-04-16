@@ -62,6 +62,9 @@ def test_read_resource_not_found(client, patch_fhir_requests):
             def raise_for_status(self): pass
             def json(self):
                 return {"resourceType": "OperationOutcome", "issue": [{"severity": "error", "code": "not-found"}]}
+            @property
+            def text(self):
+                return self.content.decode()
         return MockResourceResp()
     patch_fhir_requests.side_effect = resource_side_effect
     resp = client.get('/readResource/Patient/doesnotexist')
