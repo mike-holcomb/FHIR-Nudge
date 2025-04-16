@@ -46,6 +46,14 @@ def load_capability_statement():
         import sys
         sys.exit(1)
 
+def filter_headers(headers):
+    # Normalize header keys to lower-case for case-insensitive filtering
+    excluded = {
+        'transfer-encoding', 'content-encoding', 'content-length', 'connection',
+        'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'
+    }
+    return {k: v for k, v in headers.items() if k.lower() not in excluded}
+
 capability_index = None
 
 def get_capability_index():
@@ -77,13 +85,20 @@ def read_resource(resource: str, resource_id: str) -> Response:
     # Step 3: Forward request to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
     proxied = requests.get(fhir_url)
-    response = Response(
-        proxied.content,
-        status=proxied.status_code,
-        headers=dict(proxied.headers),
-        content_type=proxied.headers.get('Content-Type')
-    )
-    return response
+    safe_headers = filter_headers(proxied.headers)
+    if 200 <= proxied.status_code < 300:
+        resp = make_response(proxied.content, proxied.status_code)
+        for k, v in safe_headers.items():
+            resp.headers[k] = v
+        return resp
+    else:
+        # Log proxied error response for debugging
+        print(f"Proxy error from FHIR server: status={proxied.status_code}, body={proxied.text}")
+        try:
+            error_body = proxied.json()
+        except Exception:
+            error_body = {"error": proxied.text.strip() or f"FHIR server returned status {proxied.status_code}"}
+        return make_response(jsonify(error_body), proxied.status_code)
 
 @app.route('/searchResource/<resource>', methods=['GET'])
 def search_resource(resource):
