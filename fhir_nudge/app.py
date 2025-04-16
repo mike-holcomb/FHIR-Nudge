@@ -86,10 +86,19 @@ def read_resource(resource: str, resource_id: str) -> Response:
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
     proxied = requests.get(fhir_url)
     safe_headers = filter_headers(proxied.headers)
-    resp = make_response(proxied.content, proxied.status_code)
-    for k, v in safe_headers.items():
-        resp.headers[k] = v
-    return resp
+    if 200 <= proxied.status_code < 300:
+        resp = make_response(proxied.content, proxied.status_code)
+        for k, v in safe_headers.items():
+            resp.headers[k] = v
+        return resp
+    else:
+        # Log proxied error response for debugging
+        print(f"Proxy error from FHIR server: status={proxied.status_code}, body={proxied.text}")
+        try:
+            error_body = proxied.json()
+        except Exception:
+            error_body = {"error": proxied.text.strip() or f"FHIR server returned status {proxied.status_code}"}
+        return make_response(jsonify(error_body), proxied.status_code)
 
 @app.route('/searchResource/<resource>', methods=['GET'])
 def search_resource(resource):
