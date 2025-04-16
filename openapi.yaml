@@ -123,6 +123,283 @@ paths:
                         severity: "error"
                         details: ""
                     status_code: 502
+  /searchResource/{resource}:
+    get:
+      summary: Search for FHIR resources by type and parameters
+      description: |
+        Searches for resources of the specified FHIR type using query parameters. Returns a FHIR Bundle of results on success.
+        This endpoint is designed for LLMs and humans to easily discover and use valid FHIR search parameters, with rich error feedback and actionable guidance.
+
+        - **Supported Parameters:** The list of supported parameters depends on the resource type and is discoverable via error responses (see `supported_param_schema` and markdown table in `next_steps`).
+        - **Parameter Examples:**
+            - `name=Smith`
+            - `gender=female`
+            - `birthdate=1980-01-01`
+            - `identifier=12345`
+            - `name=Smith&birthdate=1980-01-01`
+        - **Edge Cases Handled:**
+            - No results found (returns an empty Bundle)
+            - Invalid parameter names (suggestions provided)
+            - Invalid parameter values (format errors)
+            - Duplicate/conflicting parameters (error)
+            - Reserved/unknown parameters (error)
+            - Backend FHIR server errors (502)
+
+        For LLMs: Always check `supported_param_schema` and the markdown table for valid parameters and their documentation. If you receive an error, use the actionable guidance to correct your query.
+      parameters:
+        - in: path
+          name: resource
+          schema:
+            type: string
+          required: true
+          description: |
+            The FHIR resource type (e.g., Patient, Observation).
+            Must be a valid type supported by the backend server.
+            Example: Patient
+        - in: query
+          name: <search parameters>
+          schema:
+            type: object
+            additionalProperties: true
+          style: form
+          explode: true
+          required: false
+          description: |
+            Any valid FHIR search parameter for the resource type. These are passed as query parameters.
+            Example: name=Smith&gender=female
+            See error responses for a full schema of supported parameters.
+      responses:
+        '200':
+          description: FHIR Bundle of search results. If no results are found, the Bundle will have an empty `entry` array.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: FHIR Bundle (pass-through)
+              examples:
+                typical:
+                  summary: Typical search result
+                  value:
+                    resourceType: Bundle
+                    entry:
+                      - resource:
+                          resourceType: Patient
+                          id: abc
+                      - resource:
+                          resourceType: Patient
+                          id: def
+                empty:
+                  summary: No results found
+                  value:
+                    resourceType: Bundle
+                    entry: []
+                observation:
+                  summary: Typical Observation search result
+                  value:
+                    resourceType: Bundle
+                    entry:
+                      - resource:
+                          resourceType: Observation
+                          id: obs1
+                          status: final
+                          code:
+                            text: Hemoglobin
+                          subject:
+                            reference: Patient/abc
+                          valueQuantity:
+                            value: 13.5
+                            unit: g/dL
+                      - resource:
+                          resourceType: Observation
+                          id: obs2
+                          status: final
+                          code:
+                            text: Glucose
+                          subject:
+                            reference: Patient/abc
+                          valueQuantity:
+                            value: 90
+                            unit: mg/dL
+                encounter:
+                  summary: Typical Encounter search result
+                  value:
+                    resourceType: Bundle
+                    entry:
+                      - resource:
+                          resourceType: Encounter
+                          id: enc1
+                          status: finished
+                          class:
+                            code: ambulatory
+                          subject:
+                            reference: Patient/abc
+                          period:
+                            start: 2023-01-01T09:00:00Z
+                            end: 2023-01-01T10:00:00Z
+                      - resource:
+                          resourceType: Encounter
+                          id: enc2
+                          status: in-progress
+                          class:
+                            code: inpatient
+                          subject:
+                            reference: Patient/def
+                          period:
+                            start: 2023-02-01T11:00:00Z
+        '400':
+          description: |
+            Bad Request. This error occurs if:
+              - The resource type is not supported or misspelled
+              - No query parameters are provided
+              - One or more query parameters are invalid or unsupported
+              - A parameter value is in the wrong format (e.g., birthdate=notadate)
+              - Duplicate or conflicting parameters are provided
+              - Reserved or unknown parameters are used
+            The response includes actionable diagnostics, suggestions, and a schema of supported parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIXErrorResponse'
+              examples:
+                invalid_param:
+                  summary: Invalid search parameter
+                  value:
+                    error: "Invalid param"
+                    friendly_message: "The parameter 'nme' is not supported. Did you mean: name?"
+                    issues:
+                      - code: "invalid-param"
+                        diagnostics: "Unsupported parameter 'nme'. Did you mean: name?"
+                        severity: "error"
+                        details: "Supported parameters: name, gender, birthdate, ..."
+                    next_steps: |
+                      | name | type   | documentation         |
+                      |------|--------|----------------------|
+                      | name | string | Patient name         |
+                      | gender | string | Gender of the patient |
+                      | birthdate | date | Date of birth |
+                    supported_param_schema:
+                      - name: name
+                        type: string
+                        documentation: Patient name
+                      - name: gender
+                        type: string
+                        documentation: Gender of the patient
+                      - name: birthdate
+                        type: date
+                        documentation: Date of birth
+                    status_code: 400
+                missing_param:
+                  summary: Missing search parameter
+                  value:
+                    error: "Missing param"
+                    friendly_message: "No search parameters provided. At least one is required."
+                    issues:
+                      - code: "missing-param"
+                        diagnostics: "No query parameters provided. At least one is required."
+                        severity: "error"
+                        details: "Supported parameters: name, gender, birthdate, ..."
+                    next_steps: |
+                      | name | type   | documentation         |
+                      |------|--------|----------------------|
+                      | name | string | Patient name         |
+                      | gender | string | Gender of the patient |
+                      | birthdate | date | Date of birth |
+                    supported_param_schema:
+                      - name: name
+                        type: string
+                        documentation: Patient name
+                      - name: gender
+                        type: string
+                        documentation: Gender of the patient
+                      - name: birthdate
+                        type: date
+                        documentation: Date of birth
+                    status_code: 400
+                value_format:
+                  summary: Invalid parameter value format
+                  value:
+                    error: "Invalid value format"
+                    friendly_message: "The value 'notadate' is not valid for parameter 'birthdate'."
+                    issues:
+                      - code: "invalid-format"
+                        diagnostics: "Parameter 'birthdate' expects a date (YYYY-MM-DD). Got: 'notadate'"
+                        severity: "error"
+                        details: "Expected format: YYYY-MM-DD"
+                    next_steps: |
+                      | name | type   | documentation         |
+                      |------|--------|----------------------|
+                      | name | string | Patient name         |
+                      | gender | string | Gender of the patient |
+                      | birthdate | date | Date of birth |
+                    supported_param_schema:
+                      - name: name
+                        type: string
+                        documentation: Patient name
+                      - name: gender
+                        type: string
+                        documentation: Gender of the patient
+                      - name: birthdate
+                        type: date
+                        documentation: Date of birth
+                    status_code: 400
+                duplicate_param:
+                  summary: Duplicate/conflicting parameters
+                  value:
+                    error: "Duplicate param"
+                    friendly_message: "The parameter 'id' was provided multiple times. Only one is allowed."
+                    issues:
+                      - code: "duplicate-param"
+                        diagnostics: "Parameter 'id' was provided more than once."
+                        severity: "error"
+                        details: "Remove duplicate parameters."
+                    next_steps: |
+                      | name | type   | documentation         |
+                      |------|--------|----------------------|
+                      | id | string | Resource ID           |
+                    supported_param_schema:
+                      - name: id
+                        type: string
+                        documentation: Resource ID
+                    status_code: 400
+                reserved_param:
+                  summary: Reserved or unknown parameter
+                  value:
+                    error: "Reserved param"
+                    friendly_message: "The parameter '_internal' is reserved and cannot be used."
+                    issues:
+                      - code: "reserved-param"
+                        diagnostics: "Parameter '_internal' is reserved for system use."
+                        severity: "error"
+                        details: "Do not use reserved parameters."
+                    next_steps: |
+                      | name | type   | documentation         |
+                      |------|--------|----------------------|
+                      | _internal | string | Reserved parameter |
+                    supported_param_schema:
+                      - name: _internal
+                        type: string
+                        documentation: Reserved parameter
+                    status_code: 400
+        '502':
+          description: |
+            Bad Gateway. This error occurs if the backend FHIR server is unreachable or returns an unexpected error.
+            The response includes diagnostics about the upstream failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIXErrorResponse'
+              examples:
+                upstream_failure:
+                  summary: Upstream FHIR server error
+                  value:
+                    error: "Upstream error"
+                    friendly_message: "The backend FHIR server could not be reached."
+                    issues:
+                      - code: "upstream"
+                        diagnostics: "Connection refused to FHIR server at http://example-fhir-server"
+                        severity: "error"
+                        details: ""
+                    status_code: 502
 components:
   schemas:
     AIXErrorResponse:
