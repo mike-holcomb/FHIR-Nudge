@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "fhir-nudge"
+version = "0.1.0"
+description = ""
+authors = ["Michael Holcomb <michael.holcomb@utsouthwestern.edu>"]
+readme = "README.md"
+packages = [{include = "fhir_nudge"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+flask = "^3.1.0"
+requests = "^2.32.3"
+python-dotenv = "^1.1.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
