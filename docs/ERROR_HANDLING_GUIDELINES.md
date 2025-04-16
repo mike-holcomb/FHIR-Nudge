@@ -13,6 +13,37 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
 
 ---
 
+## Code-Based Error Handling: Unified Dictionary Approach
+
+As of the current implementation, **all code-based error templates, next steps, and required fields are managed in a single dictionary called `CODE_ERROR_DEFS` in `fhir_nudge/error_renderer.py`**. This eliminates the need to update multiple mappings and makes it much easier to add or update code-based errors.
+
+### Example Structure
+
+```python
+CODE_ERROR_DEFS = {
+    "not_found": {
+        "template": "No {resource_type} resource was found with ID '{resource_id}'.",
+        "next_steps": "Try searching for the {resource_type} using /searchResource.",
+        "required_fields": ["resource_type", "resource_id", "status_code"],
+    },
+    "invalid_id": {
+        "template": "The ID '{resource_id}' is not valid for resource type '{resource_type}'.",
+        "next_steps": "Check the format of '{resource_id}' and try again. Expected format: {expected_id_format}. Consult the documentation if unsure.",
+        "required_fields": ["resource_type", "resource_id", "status_code", "expected_id_format"],
+    },
+    # Add more error types here as needed
+}
+```
+
+### How to Add a New Code-Based Error
+- Add a new entry to `CODE_ERROR_DEFS` with:
+  - `template`: The main error message, using Python string formatting with placeholders.
+  - `next_steps`: (Optional) Actionable guidance, also supporting placeholders.
+  - `required_fields`: List of fields that must be present in `error_data`.
+- The error rendering logic will automatically check for required fields and raise a clear error if any are missing.
+
+---
+
 ## When to Use Each Error Type
 
 ### Code-Based Errors
@@ -21,8 +52,7 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
   - The message is not user-facing or does not require localization/customization.
   - You want minimal dependencies and maximum performance.
 - **How:**
-  - Implement as string templates or helper functions in Python.
-  - Example: `code_based_not_found()` in `error_renderer.py`.
+  - Add an entry to `CODE_ERROR_DEFS` in Python.
 
 ### Registry/Template-Based Errors
 - **Use when:**
@@ -33,7 +63,6 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
 - **How:**
   - Add a template JSON file in `error_registry/` (e.g., `not_found.json`, `searchparam_error.json`).
   - Use placeholders for dynamic fields (e.g., `{resource_type}`, `{param}`).
-  - Example: See `error_registry/not_found.json`.
 
 ### Hybrid (Both)
 - **Use when:**
@@ -63,33 +92,35 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
 ## Fallback Logic
 
 1. The error rendering engine will first look for a registry/template override (resource-specific or generic).
-2. If not found, it will use the code-based default.
+2. If not found, it will use the code-based default from `CODE_ERROR_DEFS`.
 3. Developers should only add a new registry template if the message needs to be user-facing, localized, or customized.
 
 ---
 
 ## Onboarding Checklist for Contributors
 
-1. **When adding a new error:**
-    - Ask: Is this error user-facing? Does it need custom language or localization?
-      - If yes, add a template to the registry.
-      - If no, add to code-based errors.
-2. **Document any new registry templates and their placeholders.**
+1. **When adding a new code-based error:**
+    - Add a new entry to `CODE_ERROR_DEFS` in `fhir_nudge/error_renderer.py`.
+    - Specify the `template`, `next_steps`, and `required_fields`.
+    - Document any new placeholders used in your templates.
+2. **When adding a new registry/template-based error:**
+    - Add a new template file to `error_registry/` with placeholders and documentation.
 3. **Add/modify tests** to cover the new error path.
 
 ---
 
 ## Code Comments and Documentation
 
-- In `error_renderer.py`, add docstrings/comments explaining the lookup order and rationale.
+- In `error_renderer.py`, add docstrings/comments explaining the unified dictionary approach and the lookup order.
 - Example:
   ```python
   """
   Error rendering order:
     1. Try to load a registry/template-based message for the error type.
-    2. If not found, use the code-based generic message.
+    2. If not found, use the code-based message from CODE_ERROR_DEFS.
   Use registry for user-facing, customizable, or localized errors.
   Use code for simple, generic, or internal errors.
+  All code-based errors are defined in CODE_ERROR_DEFS as a single source of truth.
   """
   ```
 
