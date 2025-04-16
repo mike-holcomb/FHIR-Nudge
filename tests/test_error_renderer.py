@@ -63,6 +63,8 @@ def test_missing_required_fields_raises_value_error():
         # missing 'resource_id' and 'status_code'
         "issues": [],
     }
-    with pytest.raises(ValueError) as exc:
-        error_renderer.render_error("not_found", error_data)
-    assert "Missing required fields for 'not_found'" in str(exc.value)
+    result = error_renderer.render_error("not_found", error_data)
+    # Should not raise, but should warn in diagnostics
+    issues = result.issues
+    diag_msgs = " ".join([iss.diagnostics or "" for iss in issues])
+    assert "Missing fields" in diag_msgs or "missing" in diag_msgs

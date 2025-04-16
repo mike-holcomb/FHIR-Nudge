@@ -13,9 +13,47 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
 
 ---
 
+## Key Principles
+
+- **Explicit Diagnostics:** App code must always provide actionable, context-rich diagnostics for every error path. Do not rely on the renderer to invent or guess error messages.
+- **Renderer as Formatter:** The error renderer standardizes output (friendly_message, next_steps, etc.) but does not generate diagnostics.
+- **No Top-Level Custom Fields:** All actionable information (supported types, suggestions, etc.) must be embedded in the `diagnostics` field of the `issues` array.
+- **Best-Effort, Never Silent:** If some context is missing, diagnostics should explicitly mention what is missing (e.g., “Missing fields: resource_id”).
+
+---
+
+## Implementation Steps
+
+1. **In your Flask route or error handler, build an `error_data` dict with all context:**
+   - Always include `diagnostics` in the `issues` array.
+   - Example:
+     ```python
+     error_data = {
+         "resource_type": resource,
+         "resource_id": resource_id,
+         "status_code": 400,
+         "issues": [{
+             "severity": "error",
+             "code": "invalid-type",
+             "diagnostics": "Resource type 'Foo' is not supported. Supported types: ['Patient', 'Observation']. Did you mean: 'Patient'?"
+         }],
+     }
+     aix_error = render_error("invalid_resource_type", error_data)
+     ```
+2. **The renderer will format the response using the AIX schema.**
+3. **Tests should assert on the presence of actionable diagnostics, not on legacy keys or exception types.**
+
+---
+
+## Reference
+
+- See [docs/AIX_ERROR_SCHEMA.md](AIX_ERROR_SCHEMA.md) for schema details and examples.
+
+---
+
 ## Code-Based Error Handling: Unified Dictionary Approach
 
-As of the current implementation, **all code-based error templates, next steps, and required fields are managed in a single dictionary called `CODE_ERROR_DEFS` in `fhir_nudge/error_renderer.py`**. This eliminates the need to update multiple mappings and makes it much easier to add or update code-based errors.
+As of the current implementation, **all code-based error templates, next_steps, and required fields are managed in a single dictionary called `CODE_ERROR_DEFS` in `fhir_nudge/error_renderer.py`**. This eliminates the need to update multiple mappings and makes it much easier to add or update code-based errors.
 
 ### Example Structure
 

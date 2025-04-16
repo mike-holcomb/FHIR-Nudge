@@ -54,4 +54,34 @@ For implementation details, see the proxy code and associated tests.
 - `status_code`: The HTTP status code returned.
 - `issues`: (Optional) List of structured FHIR OperationOutcome issues, if available.
 
+## Contract for Error Generation
 
+- **App code must supply all actionable context** (diagnostics, resource type, resource ID, etc.) when calling the error renderer.
+- **The error renderer only formats and standardizes**; it does not invent or deduce diagnostics.
+- **All actionable information appears in the `issues` array**, specifically in the `diagnostics` field.
+- **No top-level ad-hoc fields** (e.g., `supported_types`, `did_you_mean`); suggestions and context are embedded in diagnostics.
+
+## Example Error Response
+
+```json
+{
+  "error": "Invalid type",
+  "friendly_message": "Resource type 'NotAType' is not supported.",
+  "next_steps": "Try a supported resource type.",
+  "resource_type": "NotAType",
+  "resource_id": "123",
+  "status_code": 400,
+  "issues": [
+    {
+      "severity": "error",
+      "code": "invalid-type",
+      "diagnostics": "Resource type 'NotAType' is not supported. Supported types: ['Patient', 'Observation']. Did you mean: 'Patient'?"
+    }
+  ]
+}
+```
+
+## Best Practices
+
+- Always provide as much context as possible in diagnostics.
+- Use the renderer for message consistency, not for generating core error content.

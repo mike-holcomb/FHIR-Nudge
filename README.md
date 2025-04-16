@@ -21,6 +21,7 @@ This project implements a Flask-based proxy server that sits between a HAPI FHIR
 - [Future Work](#future-work)
 - [License](#license)
 - [Documentation](#documentation)
+- [Error Handling & AIX Error Schema](#error-handling--aix-error-schema)
 
 ---
 
@@ -111,6 +112,19 @@ In this context, our proxy:
   
 - **Actionable Feedback:**  
   If the client submits an incorrect LOINC code, the proxy returns an error with suggestions or a list of allowed codes, guiding the client toward correction.
+
+---
+
+## Error Handling & AIX Error Schema
+
+FHIR Nudge uses a standardized, actionable error handling system designed for both LLMs and humans. All error responses conform to the [AIX Error Schema](docs/AIX_ERROR_SCHEMA.md). The contract is as follows:
+
+- **App code is responsible for providing all actionable context** (diagnostics, resource type, resource ID, etc.) to the error renderer.
+- **The error renderer formats and standardizes** the response, using templates for friendly messages and next steps, but does not invent diagnostics.
+- **Diagnostics are always explicit and actionable**—for example, if a resource type is not supported, diagnostics will say so and list supported types. If a typo is detected, diagnostics will suggest corrections.
+- **No legacy or top-level ad-hoc fields** like `supported_types` or `did_you_mean`—all context is in the `issues` array in the response.
+
+See [docs/ERROR_HANDLING_GUIDELINES.md](docs/ERROR_HANDLING_GUIDELINES.md) for implementation details and [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for the schema.
 
 ---
 

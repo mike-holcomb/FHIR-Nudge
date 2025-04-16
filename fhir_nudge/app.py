@@ -1,17 +1,18 @@
-from flask import Flask, request, jsonify, Response, make_response
+from flask import Flask, request, jsonify, Response, make_response, abort
 import requests
 import difflib
 from dotenv import load_dotenv
 import os
 import re
-
-# TODO: Refactor capability_index (knowledgebase) into its own class for better testability and maintainability.
+from fhir_nudge.error_renderer import render_error
 
 app = Flask(__name__)
 
 load_dotenv()
 FHIR_SERVER_URL = os.getenv("FHIR_SERVER_URL")
 FHIR_ID_PATTERN = re.compile(r"^[A-Za-z0-9\-\.]{1,64}$")
+
+# TODO: Refactor capability_index (knowledgebase) into its own class for better testability and maintainability.
 
 def load_capability_statement():
     """
@@ -64,25 +65,40 @@ def get_capability_index():
 
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
 def read_resource(resource: str, resource_id: str) -> Response:
-    # Step 1: Prevalidate resource type
     valid_types = set(get_capability_index().keys())
     if resource not in valid_types:
         close = difflib.get_close_matches(resource, valid_types, n=3)
-        msg = {
-            "error": f"Resource type '{resource}' is not supported by the FHIR server.",
-            "supported_types": sorted(valid_types),
-        }
+        diagnostics = f"Resource type '{resource}' is not supported. Supported types: {sorted(valid_types)}."
         if close:
-            msg["did_you_mean"] = close
-        return make_response(jsonify(msg), 400)
+            diagnostics += f" Did you mean: {', '.join(close)}?"
+        error_data = {
+            "resource_type": resource,
+            "resource_id": resource_id,
+            "status_code": 400,
+            "issues": [{
+                "severity": "error",
+                "code": "invalid-type",
+                "diagnostics": diagnostics
+            }],
+        }
+        aix_error = render_error("invalid_resource_type", error_data)
+        return jsonify(aix_error.model_dump()), 400
 
-    # Step 2: Validate resource_id format
     if not FHIR_ID_PATTERN.match(resource_id):
-        return make_response(jsonify({
-            "error": "Invalid resource_id format. Must match FHIR id pattern [A-Za-z0-9-\\.]{1,64}."
-        }), 400)
+        diagnostics = f"The ID '{resource_id}' is not valid for resource type '{resource}'. Expected format: [A-Za-z0-9-\\.]{{1,64}}."
+        error_data = {
+            "resource_type": resource,
+            "resource_id": resource_id,
+            "status_code": 400,
+            "issues": [{
+                "severity": "error",
+                "code": "invalid-id",
+                "diagnostics": diagnostics
+            }],
+        }
+        aix_error = render_error("invalid_id", error_data)
+        return jsonify(aix_error.model_dump()), 400
 
-    # Step 3: Forward request to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
     proxied = requests.get(fhir_url)
     safe_headers = filter_headers(proxied.headers)
@@ -92,13 +108,43 @@ def read_resource(resource: str, resource_id: str) -> Response:
             resp.headers[k] = v
         return resp
     else:
-        # Log proxied error response for debugging
         print(f"Proxy error from FHIR server: status={proxied.status_code}, body={proxied.text}")
         try:
             error_body = proxied.json()
-        except Exception:
-            error_body = {"error": proxied.text.strip() or f"FHIR server returned status {proxied.status_code}"}
-        return make_response(jsonify(error_body), proxied.status_code)
+            if (
+                isinstance(error_body, dict)
+                and error_body.get("resourceType") == "OperationOutcome"
+                and any(issue.get("code") == "not-found" for issue in error_body.get("issue", []))
+            ):
+                diagnostics = f"No {resource} resource was found with ID '{resource_id}'."
+                error_data = {
+                    "resource_type": resource,
+                    "resource_id": resource_id,
+                    "status_code": proxied.status_code,
+                    "issues": [{
+                        "severity": "error",
+                        "code": "not-found",
+                        "diagnostics": diagnostics
+                    }],
+                }
+                aix_error = render_error("not_found", error_data)
+                return jsonify(aix_error.model_dump()), proxied.status_code
+        except Exception as ex:
+            print(f"Error parsing FHIR error response: {ex}")
+        # Fallback for plain text or unknown errors
+        diagnostics = f"FHIR server returned status {proxied.status_code}: {proxied.text}"
+        error_data = {
+            "resource_type": resource,
+            "resource_id": resource_id,
+            "status_code": proxied.status_code,
+            "issues": [{
+                "severity": "error",
+                "code": "unknown",
+                "diagnostics": diagnostics
+            }],
+        }
+        aix_error = render_error("unknown_error", error_data)
+        return jsonify(aix_error.model_dump()), proxied.status_code
 
 @app.route('/searchResource/<resource>', methods=['GET'])
 def search_resource(resource):
@@ -107,6 +153,42 @@ def search_resource(resource):
     resp = requests.get(fhir_url, params=request.args)
     # TODO: Add enhanced error feedback, soft error handling, etc.
     return (resp.content, resp.status_code, dict(resp.headers))
+
+@app.errorhandler(404)
+def handle_404(e):
+    resource_type = request.view_args.get('resource') if request.view_args and 'resource' in request.view_args else None
+    resource_id = request.view_args.get('resource_id') if request.view_args and 'resource_id' in request.view_args else None
+    diagnostics = getattr(e, 'description', str(e))
+    error_data = {
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "status_code": 404,
+        "issues": [{
+            "severity": "error",
+            "code": "not-found",
+            "diagnostics": diagnostics
+        }],
+    }
+    aix_error = render_error("not_found", error_data)
+    return jsonify(aix_error.model_dump()), 404
+
+@app.errorhandler(400)
+def handle_400(e):
+    resource_type = request.view_args.get('resource') if request.view_args and 'resource' in request.view_args else None
+    resource_id = request.view_args.get('resource_id') if request.view_args and 'resource_id' in request.view_args else None
+    diagnostics = getattr(e, 'description', str(e))
+    error_data = {
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "status_code": 400,
+        "issues": [{
+            "severity": "error",
+            "code": "invalid",
+            "diagnostics": diagnostics
+        }],
+    }
+    aix_error = render_error("unknown_error", error_data)
+    return jsonify(aix_error.model_dump()), 400
 
 if __name__ == '__main__':
     app.run(debug=True)
