@@ -30,6 +30,19 @@ CODE_ERROR_DEFS = {
     # Add more error types here as needed
 }
 
+def render_param_schema_markdown(supported_param_schema):
+    # Pretty print as a markdown table
+    headers = ["name", "type", "documentation", "example"]
+    rows = []
+    for param in supported_param_schema:
+        row = [param.get(h, "") or "" for h in headers]
+        rows.append(row)
+    # Build markdown table
+    table = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"]*len(headers)) + " |"]
+    for row in rows:
+        table.append("| " + " | ".join(row) + " |")
+    return "\n".join(table)
+
 def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
     """
     Render an AIXErrorResponse using code-based templates, with best-effort context.
@@ -46,17 +59,7 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
     supported_param_schema = error_data.get("supported_param_schema")
     pretty_schema = None
     if supported_param_schema:
-        # Pretty print as a markdown table
-        headers = ["name", "type", "documentation", "example"]
-        rows = []
-        for param in supported_param_schema:
-            row = [param.get(h, "") or "" for h in headers]
-            rows.append(row)
-        # Build markdown table
-        table = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"]*len(headers)) + " |"]
-        for row in rows:
-            table.append("| " + " | ".join(row) + " |")
-        pretty_schema = "\n".join(table)
+        pretty_schema = render_param_schema_markdown(supported_param_schema)
     if error_def:
         required = error_def.get("required_fields", [])
         for f in required:
@@ -71,7 +74,10 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
         # Append pretty schema to next_steps if present
         next_steps = error_def.get("next_steps", "").format(**format_data)
         if pretty_schema:
-            next_steps += "\n\n#### Supported Search Parameters\n" + pretty_schema
+            if next_steps:
+                next_steps = pretty_schema + "\n\n" + next_steps
+            else:
+                next_steps = pretty_schema
         friendly_message = error_def["template"].format(**format_data)
         error_text = error_type.replace('_', ' ').capitalize()
         issues = error_data.get("issues", [])

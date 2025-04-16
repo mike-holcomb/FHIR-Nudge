@@ -115,7 +115,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
             "resource_type": resource,
             "status_code": 400,
             "supported_params": ', '.join(sorted(supported_params)),
-            "supported_param_schema": supported_param_objs,
+            "supported_param_schema": supported_param_objs,  # Restore for renderer
             "diagnostics": diagnostics,
             "issues": [{
                 "severity": "error",
@@ -124,16 +124,14 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
             }],
         }
         aix_error = render_error("invalid_param", error_data)
-        model = aix_error.model_dump()
-        model["supported_param_schema"] = supported_param_objs
-        return False, (jsonify(model), 400)
+        return False, (jsonify(aix_error.model_dump()), 400)
     # 3. Empty query check
     if not query_params:
         diagnostics = f"No query parameters provided. Please specify at least one search parameter for resource '{resource}'."
         error_data = {
             "resource_type": resource,
             "status_code": 400,
-            "supported_param_schema": supported_param_objs,
+            "supported_param_schema": supported_param_objs,  # Restore for renderer
             "diagnostics": diagnostics,
             "issues": [{
                 "severity": "error",
@@ -142,9 +140,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
             }],
         }
         aix_error = render_error("missing_param", error_data)
-        model = aix_error.model_dump()
-        model["supported_param_schema"] = supported_param_objs
-        return False, (jsonify(model), 400)
+        return False, (jsonify(aix_error.model_dump()), 400)
     # TODO: Add value format checks, duplicate/conflicting param checks, reserved param warnings, etc.
     return True, None
 
@@ -240,8 +236,8 @@ def search_resource(resource):
     # Forward query params to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}"
     resp = requests.get(fhir_url, params=request.args)
-    # TODO: Add enhanced error feedback, soft error handling, etc.
-    return (resp.content, resp.status_code, dict(resp.headers))
+    filtered_headers = filter_headers(resp.headers)
+    return Response(resp.content, status=resp.status_code, headers=filtered_headers)
 
 @app.route('/openapi.yaml')
 def openapi_yaml():

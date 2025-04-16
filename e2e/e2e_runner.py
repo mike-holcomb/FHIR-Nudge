@@ -191,6 +191,216 @@ def test_read_fuzzy_resource_type():
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
+def test_search_resource_valid():
+    """
+    Test: Search for Patient with a valid parameter (should return Bundle).
+    Requires at least one Patient with name 'John' in the backend FHIR server.
+    """
+    print("Test: Search Patient (valid param)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        bundle = client.search_resource("Patient", {"name": "John"})
+        assert bundle["resourceType"] == "Bundle"
+        assert "entry" in bundle
+        print(f"  PASS (entries: {len(bundle['entry']) if 'entry' in bundle else 0})")
+    except requests.HTTPError as e:
+        print(f"  FAIL: HTTP error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  Raw response: {e.response.text}")
+        global failures
+        failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_invalid_param():
+    """
+    Test: Search with an invalid parameter (should return 400 with actionable diagnostics).
+    """
+    print("Test: Search Patient (invalid param)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        client.search_resource("Patient", {"nme": "John"})
+        print("  FAIL: Expected HTTP 400, got success")
+        global failures
+        failures += 1
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 400:
+            try:
+                err = e.response.json()
+                diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+                assert "unsupported" in diags.lower() or "did you mean" in diags.lower()
+                print(f"  PASS (caught expected 400, diagnostics: {diags})")
+            except Exception as ex:
+                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  Raw response: {e.response.text}")
+                failures += 1
+        else:
+            print(f"  FAIL: Unexpected HTTP error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  Raw response: {e.response.text}")
+            failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_missing_param():
+    """
+    Test: Search with no parameters (should return 400 and actionable diagnostics).
+    """
+    print("Test: Search Patient (missing param)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        client.search_resource("Patient", {})
+        print("  FAIL: Expected HTTP 400, got success")
+        global failures
+        failures += 1
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 400:
+            try:
+                err = e.response.json()
+                diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+                assert "no query parameters provided" in diags.lower() or "missing" in diags.lower()
+                print(f"  PASS (caught expected 400, diagnostics: {diags})")
+            except Exception as ex:
+                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  Raw response: {e.response.text}")
+                failures += 1
+        else:
+            print(f"  FAIL: Unexpected HTTP error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  Raw response: {e.response.text}")
+            failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_invalid_value_format():
+    """
+    Test: Search with a parameter that has an invalid value format (should return 400 and format diagnostics).
+    """
+    print("Test: Search Patient (invalid value format)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        client.search_resource("Patient", {"birthdate": "notadate"})
+        print("  FAIL: Expected HTTP 400, got success")
+        global failures
+        failures += 1
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 400:
+            try:
+                err = e.response.json()
+                diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+                assert "expects a date" in diags.lower() or "format" in diags.lower()
+                print(f"  PASS (caught expected 400, diagnostics: {diags})")
+            except Exception as ex:
+                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  Raw response: {e.response.text}")
+                failures += 1
+        else:
+            print(f"  FAIL: Unexpected HTTP error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  Raw response: {e.response.text}")
+            failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_duplicate_param():
+    """
+    Test: Search with a duplicate/conflicting parameter (should return 400 and duplicate diagnostics).
+    Note: requests will collapse duplicate keys unless you use a list of tuples.
+    """
+    print("Test: Search Patient (duplicate/conflicting param)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        # Use list of tuples to simulate duplicate params: id=123&id=456
+        resp = requests.get(f"{PROXY_URL}/searchResource/Patient", params=[("id", "123"), ("id", "456")])
+        if resp.status_code == 400:
+            err = resp.json()
+            diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+            assert "duplicate" in diags.lower() or "more than once" in diags.lower()
+            print(f"  PASS (caught expected 400, diagnostics: {diags})")
+        else:
+            print(f"  FAIL: Expected HTTP 400, got {resp.status_code}")
+            print(f"  Raw response: {resp.text}")
+            global failures
+            failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_reserved_param():
+    """
+    Test: Search with a reserved/unknown parameter (should return 400 and reserved param diagnostics).
+    """
+    print("Test: Search Patient (reserved param)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        client.search_resource("Patient", {"_internal": "foo"})
+        print("  FAIL: Expected HTTP 400, got success")
+        global failures
+        failures += 1
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 400:
+            try:
+                err = e.response.json()
+                diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+                assert "reserved" in diags.lower()
+                print(f"  PASS (caught expected 400, diagnostics: {diags})")
+            except Exception as ex:
+                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  Raw response: {e.response.text}")
+                failures += 1
+        else:
+            print(f"  FAIL: Unexpected HTTP error: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  Raw response: {e.response.text}")
+            failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_empty_result():
+    """
+    Test: Search for a Patient with a value that should return no results (should return 200 and empty Bundle).
+    """
+    print("Test: Search Patient (empty result)...")
+    try:
+        client = FhirNudgeClient(PROXY_URL)
+        bundle = client.search_resource("Patient", {"name": "NoSuchNameXYZ123"})
+        assert bundle["resourceType"] == "Bundle"
+        assert "entry" not in bundle or len(bundle["entry"]) == 0
+        print("  PASS (empty result)")
+    except requests.HTTPError as e:
+        print(f"  FAIL: HTTP error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"  Raw response: {e.response.text}")
+        global failures
+        failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
+def test_search_resource_upstream_error():
+    """
+    Test: Simulate backend FHIR server failure (should return 502 and upstream error diagnostics).
+    TODO: Requires backend FHIR server to be offline or misconfigured for this test.
+    """
+    print("Test: Search Patient (upstream error)...")
+    try:
+        # Temporarily misconfigure backend or stop FHIR server for this test
+        # This is a placeholder; implementation will depend on your test infra
+        print("  SKIP: Not implemented (requires backend FHIR server offline)")
+        # client = FhirNudgeClient(PROXY_URL)
+        # client.search_resource("Patient", {"name": "John"})
+        # print("  FAIL: Expected HTTP 502, got success")
+        # global failures
+        # failures += 1
+    except Exception as e:
+        print(f"  FAIL: Unexpected error: {e}")
+        failures += 1
+
 if __name__ == "__main__":
     proxy_proc = start_proxy()
     try:
@@ -200,6 +410,14 @@ if __name__ == "__main__":
         test_read_invalid_resource()
         test_read_invalid_id_format()
         test_read_fuzzy_resource_type()
+        test_search_resource_valid()
+        test_search_resource_invalid_param()
+        test_search_resource_missing_param()
+        test_search_resource_invalid_value_format()
+        test_search_resource_duplicate_param()
+        test_search_resource_reserved_param()
+        test_search_resource_empty_result()
+        test_search_resource_upstream_error()
         if failures:
             print(f"\n{failures} test(s) failed.")
             sys.exit(1)
