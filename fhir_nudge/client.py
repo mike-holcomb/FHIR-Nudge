@@ -1,5 +1,6 @@
 import requests
 from typing import Optional, Dict, Any
+from urllib.parse import urljoin
 
 class FhirNudgeClient:
     """
@@ -23,7 +24,8 @@ class FhirNudgeClient:
         Returns:
             The resource as a dict, or raises HTTPError on failure.
         """
-        url = f"{self.base_url}/readResource/{resource_type}/{resource_id}"
+        path = f"/readResource/{resource_type}/{resource_id}"
+        url = urljoin(self.base_url + '/', path)
         resp = requests.get(url, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
