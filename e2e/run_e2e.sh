@@ -36,7 +36,7 @@ done
 
 # Run the E2E tests
 echo "Running E2E tests..."
-poetry run python $(dirname $0)/test_e2e.py
+poetry run python $(dirname $0)/e2e_runner.py
 TEST_EXIT_CODE=$?
 
 # Kill the Flask proxy

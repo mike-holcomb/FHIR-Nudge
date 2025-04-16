@@ -46,6 +46,13 @@ def load_capability_statement():
         import sys
         sys.exit(1)
 
+def filter_headers(headers):
+    excluded = {
+        'Transfer-Encoding', 'Content-Encoding', 'Content-Length', 'Connection',
+        'Keep-Alive', 'Proxy-Authenticate', 'Proxy-Authorization', 'TE', 'Trailer', 'Upgrade'
+    }
+    return {k: v for k, v in headers.items() if k not in excluded}
+
 capability_index = None
 
 def get_capability_index():
@@ -77,13 +84,11 @@ def read_resource(resource: str, resource_id: str) -> Response:
     # Step 3: Forward request to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
     proxied = requests.get(fhir_url)
-    response = Response(
-        proxied.content,
-        status=proxied.status_code,
-        headers=dict(proxied.headers),
-        content_type=proxied.headers.get('Content-Type')
-    )
-    return response
+    safe_headers = filter_headers(proxied.headers)
+    resp = make_response(proxied.content, proxied.status_code)
+    for k, v in safe_headers.items():
+        resp.headers[k] = v
+    return resp
 
 @app.route('/searchResource/<resource>', methods=['GET'])
 def search_resource(resource):
