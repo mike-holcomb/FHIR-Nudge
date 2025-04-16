@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, make_response
 import requests
 import difflib
 from dotenv import load_dotenv
@@ -51,7 +51,6 @@ def read_resource(resource: str, resource_id: str) -> Response:
     # Step 1: Prevalidate resource type
     valid_types = set(capability_index.keys())
     if resource not in valid_types:
-        # Fuzzy match for close resource types
         close = difflib.get_close_matches(resource, valid_types, n=3)
         msg = {
             "error": f"Resource type '{resource}' is not supported by the FHIR server.",
@@ -59,18 +58,24 @@ def read_resource(resource: str, resource_id: str) -> Response:
         }
         if close:
             msg["did_you_mean"] = close
-        return jsonify(msg), 400
+        return make_response(jsonify(msg), 400)
 
     # Step 2: Validate resource_id format
     if not FHIR_ID_PATTERN.match(resource_id):
-        return jsonify({
+        return make_response(jsonify({
             "error": "Invalid resource_id format. Must match FHIR id pattern [A-Za-z0-9-\\.]{1,64}."
-        }), 400
+        }), 400)
 
     # Step 3: Forward request to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
-    resp = requests.get(fhir_url)
-    return (resp.content, resp.status_code, resp.headers.items())
+    proxied = requests.get(fhir_url)
+    response = Response(
+        proxied.content,
+        status=proxied.status_code,
+        headers=dict(proxied.headers),
+        content_type=proxied.headers.get('Content-Type')
+    )
+    return response
 
 @app.route('/searchResource/<resource>', methods=['GET'])
 def search_resource(resource):
@@ -78,7 +83,7 @@ def search_resource(resource):
     fhir_url = f"{FHIR_SERVER_URL}/{resource}"
     resp = requests.get(fhir_url, params=request.args)
     # TODO: Add enhanced error feedback, soft error handling, etc.
-    return (resp.content, resp.status_code, resp.headers.items())
+    return (resp.content, resp.status_code, dict(resp.headers))
 
 if __name__ == '__main__':
     app.run(debug=True)
