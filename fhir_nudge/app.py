@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, Response, make_response, abort
+from flask import Flask, request, jsonify, Response, make_response, abort, send_file
 import requests
 import difflib
 from dotenv import load_dotenv
@@ -153,6 +153,10 @@ def search_resource(resource):
     resp = requests.get(fhir_url, params=request.args)
     # TODO: Add enhanced error feedback, soft error handling, etc.
     return (resp.content, resp.status_code, dict(resp.headers))
+
+@app.route('/openapi.yaml')
+def openapi_yaml():
+    return send_file(os.path.join(os.path.dirname(__file__), '..', 'openapi.yaml'), mimetype='application/yaml')
 
 @app.errorhandler(404)
 def handle_404(e):
