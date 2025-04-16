@@ -193,17 +193,15 @@ def test_search_resource_invalid_param(client, patch_fhir_requests):
     patch_fhir_requests.side_effect = fake_metadata
     resp = client.get('/searchResource/Patient?nme=John')
     assert resp.status_code == 400
+    # Assert response is AIXErrorSchema
     assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
-    # The guidance should include a markdown table of parameters
+    # Assert error type and actionable diagnostics
+    assert resp.json["error"].lower().startswith("invalid param")
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "unsupported parameter" in issue_diags.lower()
+    assert "did you mean" in issue_diags.lower() or "suggestion" in issue_diags.lower() or "close" in issue_diags.lower()
+    # Assert presence of actionable guidance (markdown table)
     assert "| name | type | documentation" in resp.json.get("next_steps", "")
-    # The schema should be present somewhere (top-level or in markdown)
-    schema = resp.json.get("supported_param_schema")
-    if schema:
-        assert any(p["name"] == "name" for p in schema)
-        assert any(p["name"] == "gender" for p in schema)
-    else:
-        # Fallback: just check the markdown table is present
-        assert "| name | type | documentation" in resp.json.get("next_steps", "")
 
 def test_search_resource_missing_param(client, patch_fhir_requests):
     def fake_metadata(url, *args, **kwargs):
@@ -225,13 +223,10 @@ def test_search_resource_missing_param(client, patch_fhir_requests):
     resp = client.get('/searchResource/Patient')
     assert resp.status_code == 400
     assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["error"].lower().startswith("missing param")
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "no query parameters provided" in issue_diags.lower() or "missing" in issue_diags.lower()
     assert "| name | type | documentation" in resp.json.get("next_steps", "")
-    schema = resp.json.get("supported_param_schema")
-    if schema:
-        assert any(p["name"] == "name" for p in schema)
-        assert any(p["name"] == "gender" for p in schema)
-    else:
-        assert "| name | type | documentation" in resp.json.get("next_steps", "")
 
 def test_search_resource_invalid_type(client, patch_fhir_requests):
     def fake_metadata(url, *args, **kwargs):
