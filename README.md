@@ -20,6 +20,7 @@ This project implements a Flask-based proxy server that sits between a HAPI FHIR
 - [Usage and Deployment](#usage-and-deployment)
 - [Future Work](#future-work)
 - [License](#license)
+- [Documentation](#documentation)
 
 ---
 
@@ -161,6 +162,12 @@ The proxy will start on [http://localhost:5000](http://localhost:5000).
   - **Example:** `GET /searchResource/Patient?name=john%20doe`
 
 If errors are encountered—such as unrecognized search parameters or invalid coded values—the proxy will respond with enhanced error messages and suggestions, including a reference subdocument outlining supported parameters for the queried resource.
+
+---
+
+## Documentation
+
+- See [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for a detailed description of the AI Experience (AIX) error schema used in FHIR Nudge error responses. This schema is designed to make FHIR errors more actionable and understandable for both humans and AI tools.
 
 ---
 
