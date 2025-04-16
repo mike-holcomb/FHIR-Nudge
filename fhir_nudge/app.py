@@ -81,7 +81,7 @@ def read_resource(resource: str, resource_id: str) -> Response:
                 "diagnostics": diagnostics
             }],
         }
-        aix_error = render_error("invalid_resource_type", error_data)
+        aix_error = render_error("invalid-type", error_data)
         return jsonify(aix_error.model_dump()), 400
 
     if not FHIR_ID_PATTERN.match(resource_id):

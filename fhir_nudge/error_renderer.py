@@ -51,6 +51,8 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
                 "details": "<missing details>"  # TODO: Patch with real details if available
             }]
     else:
+        import logging
+        logging.warning(f"render_error: Unknown error_type '{error_type}', using fallback error template.")
         friendly_message = "An error occurred."
         next_steps = None
         error_text = error_type.replace('_', ' ').capitalize()

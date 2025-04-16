@@ -68,3 +68,15 @@ def test_missing_required_fields_raises_value_error():
     issues = result.issues
     diag_msgs = " ".join([iss.diagnostics or "" for iss in issues])
     assert "Missing fields" in diag_msgs or "missing" in diag_msgs
+
+def test_render_error_logs_warning_on_fallback(caplog):
+    error_data = {
+        "resource_type": "Patient",
+        "resource_id": "999",
+        "status_code": 500,
+        "issues": [],
+    }
+    with caplog.at_level("WARNING"):
+        aix_error = error_renderer.render_error("not_a_real_error_type", error_data)
+    assert aix_error.friendly_message == "An error occurred."
+    assert "render_error: Unknown error_type 'not_a_real_error_type'" in caplog.text
