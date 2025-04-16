@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import os
 import re
 
+# TODO: Refactor capability_index (knowledgebase) into its own class for better testability and maintainability.
+
 app = Flask(__name__)
 
 load_dotenv()
@@ -44,12 +46,18 @@ def load_capability_statement():
         import sys
         sys.exit(1)
 
-capability_index = load_capability_statement()
+capability_index = None
+
+def get_capability_index():
+    global capability_index
+    if capability_index is None:
+        capability_index = load_capability_statement()
+    return capability_index
 
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
 def read_resource(resource: str, resource_id: str) -> Response:
     # Step 1: Prevalidate resource type
-    valid_types = set(capability_index.keys())
+    valid_types = set(get_capability_index().keys())
     if resource not in valid_types:
         close = difflib.get_close_matches(resource, valid_types, n=3)
         msg = {
