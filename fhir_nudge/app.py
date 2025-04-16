@@ -47,11 +47,12 @@ def load_capability_statement():
         sys.exit(1)
 
 def filter_headers(headers):
+    # Normalize header keys to lower-case for case-insensitive filtering
     excluded = {
-        'Transfer-Encoding', 'Content-Encoding', 'Content-Length', 'Connection',
-        'Keep-Alive', 'Proxy-Authenticate', 'Proxy-Authorization', 'TE', 'Trailer', 'Upgrade'
+        'transfer-encoding', 'content-encoding', 'content-length', 'connection',
+        'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'
     }
-    return {k: v for k, v in headers.items() if k not in excluded}
+    return {k: v for k, v in headers.items() if k.lower() not in excluded}
 
 capability_index = None
 
