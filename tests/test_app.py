@@ -37,18 +37,34 @@ def test_read_resource_invalid_type(client, patch_fhir_requests):
     # No need to override side_effect; /metadata is enough
     resp = client.get('/readResource/NotAType/123')
     assert resp.status_code == 400
-    assert "supported_types" in resp.json
-    assert "error" in resp.json
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 400
+    # Check that diagnostics include the error message
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "is not supported" in issue_diags
+    assert "Supported types:" in issue_diags
 
 def test_read_resource_fuzzy_match(client, patch_fhir_requests):
     resp = client.get('/readResource/Patiant/123')
     assert resp.status_code == 400
-    assert "did_you_mean" in resp.json
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 400
+    # Check that diagnostics include the error message
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "is not supported" in issue_diags
+    assert "Did you mean:" in issue_diags
 
 def test_read_resource_invalid_id(client, patch_fhir_requests):
     resp = client.get('/readResource/Patient/invalid id!')
     assert resp.status_code == 400
-    assert "Invalid resource_id format" in resp.json["error"]
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 400
+    # Check that diagnostics include the error message
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "not valid for resource type" in issue_diags
 
 def test_read_resource_not_found(client, patch_fhir_requests):
     original_side_effect = patch_fhir_requests.side_effect
@@ -69,6 +85,12 @@ def test_read_resource_not_found(client, patch_fhir_requests):
     patch_fhir_requests.side_effect = resource_side_effect
     resp = client.get('/readResource/Patient/doesnotexist')
     assert resp.status_code == 404 or resp.status_code == 200  # Depending on proxy behavior
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 404
+    # Check that diagnostics include the error message
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "No Patient resource was found" in issue_diags
 
 def test_read_resource_fhir_plaintext_error(client, patch_fhir_requests):
     original_side_effect = patch_fhir_requests.side_effect
@@ -87,8 +109,12 @@ def test_read_resource_fhir_plaintext_error(client, patch_fhir_requests):
     patch_fhir_requests.side_effect = resource_side_effect
     resp = client.get('/readResource/Patient/123')
     assert resp.status_code == 500
-    assert "error" in resp.json
-    assert "Server error occurred" in resp.json["error"]
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 500
+    # Check that diagnostics include the server error
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "Server error occurred" in issue_diags
 
 def test_read_resource_fhir_custom_json_error(client, patch_fhir_requests):
     original_side_effect = patch_fhir_requests.side_effect
@@ -107,7 +133,12 @@ def test_read_resource_fhir_custom_json_error(client, patch_fhir_requests):
     patch_fhir_requests.side_effect = resource_side_effect
     resp = client.get('/readResource/Patient/123')
     assert resp.status_code == 403
-    assert resp.json["message"] == "Forbidden"
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 403
+    # Check that diagnostics include the forbidden message
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "Forbidden" in issue_diags
 
 def test_read_resource_fhir_empty_error(client, patch_fhir_requests):
     original_side_effect = patch_fhir_requests.side_effect
@@ -126,5 +157,19 @@ def test_read_resource_fhir_empty_error(client, patch_fhir_requests):
     patch_fhir_requests.side_effect = resource_side_effect
     resp = client.get('/readResource/Patient/doesnotexist')
     assert resp.status_code == 404
-    assert "error" in resp.json
-    assert "FHIR server returned status 404" in resp.json["error"]
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["status_code"] == 404
+    # Check that diagnostics mention the server status
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "FHIR server returned status 404" in issue_diags or "404" in issue_diags
+
+def test_missing_required_fields_returns_clear_error(client):
+    # Simulate a call with missing resource_id (should return a 400 or 422 with a clear error message)
+    resp = client.get('/readResource/Patient/')
+    assert resp.status_code in (400, 404, 422)
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    # Should mention missing required fields in diagnostics
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "Missing fields" in issue_diags or "missing" in issue_diags

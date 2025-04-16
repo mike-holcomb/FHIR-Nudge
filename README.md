@@ -20,6 +20,8 @@ This project implements a Flask-based proxy server that sits between a HAPI FHIR
 - [Usage and Deployment](#usage-and-deployment)
 - [Future Work](#future-work)
 - [License](#license)
+- [Documentation](#documentation)
+- [Error Handling & AIX Error Schema](#error-handling--aix-error-schema)
 
 ---
 
@@ -113,6 +115,19 @@ In this context, our proxy:
 
 ---
 
+## Error Handling & AIX Error Schema
+
+FHIR Nudge uses a standardized, actionable error handling system designed for both LLMs and humans. All error responses conform to the [AIX Error Schema](docs/AIX_ERROR_SCHEMA.md). The contract is as follows:
+
+- **App code is responsible for providing all actionable context** (diagnostics, resource type, resource ID, etc.) to the error renderer.
+- **The error renderer formats and standardizes** the response, using templates for friendly messages and next steps, but does not invent diagnostics.
+- **Diagnostics are always explicit and actionable**—for example, if a resource type is not supported, diagnostics will say so and list supported types. If a typo is detected, diagnostics will suggest corrections.
+- **No legacy or top-level ad-hoc fields** like `supported_types` or `did_you_mean`—all context is in the `issues` array in the response.
+
+See [docs/ERROR_HANDLING_GUIDELINES.md](docs/ERROR_HANDLING_GUIDELINES.md) for implementation details and [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for the schema.
+
+---
+
 ## Usage and Deployment
 
 ### Configuration
@@ -161,6 +176,12 @@ The proxy will start on [http://localhost:5000](http://localhost:5000).
   - **Example:** `GET /searchResource/Patient?name=john%20doe`
 
 If errors are encountered—such as unrecognized search parameters or invalid coded values—the proxy will respond with enhanced error messages and suggestions, including a reference subdocument outlining supported parameters for the queried resource.
+
+---
+
+## Documentation
+
+- See [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for a detailed description of the AI Experience (AIX) error schema used in FHIR Nudge error responses. This schema is designed to make FHIR errors more actionable and understandable for both humans and AI tools.
 
 ---
 
