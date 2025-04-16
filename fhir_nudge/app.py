@@ -17,7 +17,7 @@ FHIR_ID_PATTERN = re.compile(r"^[A-Za-z0-9\-\.]{1,64}$")
 def load_capability_statement():
     """
     Fetches the CapabilityStatement from the FHIR server and builds a mapping:
-    { resource_type: set([supported_param1, ...]), ... }
+    { resource_type: list([param_obj1, ...]), ... }
     Returns an empty dict on error.
     """
     try:
@@ -30,8 +30,16 @@ def load_capability_statement():
         for rest in data.get("rest", []):
             for resource in rest.get("resource", []):
                 resource_type = resource.get("type")
-                search_params = {param["name"] for param in resource.get("searchParam", []) if "name" in param}
-                index[resource_type] = search_params
+                param_objs = []
+                for param in resource.get("searchParam", []):
+                    param_obj = {
+                        "name": param.get("name"),
+                        "type": param.get("type"),
+                        "documentation": param.get("documentation"),
+                        "example": param.get("example"),
+                    }
+                    param_objs.append(param_obj)
+                index[resource_type] = param_objs
         return index
     except Exception as e:
         print("\n[ FATAL ERROR: Failed to load FHIR CapabilityStatement ]\n" + "-"*60)
@@ -62,6 +70,80 @@ def get_capability_index():
     if capability_index is None:
         capability_index = load_capability_statement()
     return capability_index
+
+def _prevalidate_search_resource(resource: str, query_params: dict):
+    """
+    Perform lightweight prevalidation of a searchResource request.
+    Returns (is_valid, error_response) where:
+      - is_valid: bool, True if request is valid enough to forward
+      - error_response: Flask response if invalid, else None
+    """
+    capability_idx = get_capability_index()
+    valid_types = set(capability_idx.keys())
+    # 1. Resource type check
+    if resource not in valid_types:
+        close = difflib.get_close_matches(resource, valid_types, n=3)
+        diagnostics = f"Resource type '{resource}' is not supported. Supported types: {sorted(valid_types)}."
+        if close:
+            diagnostics += f" Did you mean: {', '.join(close)}?"
+        error_data = {
+            "resource_type": resource,
+            "status_code": 400,
+            "issues": [{
+                "severity": "error",
+                "code": "invalid-type",
+                "diagnostics": diagnostics
+            }],
+        }
+        aix_error = render_error("invalid-type", error_data)
+        return False, (jsonify(aix_error.model_dump()), 400)
+    # 2. Query parameter name check
+    supported_param_objs = capability_idx[resource]
+    supported_params = {p["name"] for p in supported_param_objs if p["name"]}
+    unknown_params = [p for p in query_params if p not in supported_params]
+    if unknown_params:
+        suggestions = []
+        for p in unknown_params:
+            close = difflib.get_close_matches(p, supported_params, n=1)
+            if close:
+                suggestions.append(f"'{p}' → '{close[0]}'")
+        diagnostics = f"Unsupported parameter(s) for resource '{resource}': {unknown_params}."
+        if suggestions:
+            diagnostics += " Did you mean: " + ", ".join(suggestions)
+        error_data = {
+            "resource_type": resource,
+            "status_code": 400,
+            "supported_params": ', '.join(sorted(supported_params)),
+            "supported_param_schema": supported_param_objs,
+            "issues": [{
+                "severity": "error",
+                "code": "invalid-param",
+                "diagnostics": diagnostics
+            }],
+        }
+        aix_error = render_error("invalid_param", error_data)
+        # Attach schema at top-level for LLMs/humans
+        resp = jsonify(aix_error.model_dump())
+        resp.json["supported_param_schema"] = supported_param_objs
+        return False, (resp, 400)
+    # 3. Empty query check
+    if not query_params:
+        error_data = {
+            "resource_type": resource,
+            "status_code": 400,
+            "supported_param_schema": supported_param_objs,
+            "issues": [{
+                "severity": "error",
+                "code": "missing-param",
+                "diagnostics": f"No query parameters provided. Please specify at least one search parameter for resource '{resource}'."
+            }],
+        }
+        aix_error = render_error("missing_param", error_data)
+        resp = jsonify(aix_error.model_dump())
+        resp.json["supported_param_schema"] = supported_param_objs
+        return False, (resp, 400)
+    # TODO: Add value format checks, duplicate/conflicting param checks, reserved param warnings, etc.
+    return True, None
 
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
 def read_resource(resource: str, resource_id: str) -> Response:
@@ -148,6 +230,9 @@ def read_resource(resource: str, resource_id: str) -> Response:
 
 @app.route('/searchResource/<resource>', methods=['GET'])
 def search_resource(resource):
+    is_valid, error_response = _prevalidate_search_resource(resource, request.args)
+    if not is_valid:
+        return error_response
     # Forward query params to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}"
     resp = requests.get(fhir_url, params=request.args)

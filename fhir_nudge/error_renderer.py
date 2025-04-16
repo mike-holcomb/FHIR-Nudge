@@ -12,6 +12,21 @@ CODE_ERROR_DEFS = {
         "next_steps": "Check the format of '{resource_id}' and try again. Expected format: {expected_id_format}. Consult the documentation if unsure.",
         "required_fields": ["resource_type", "resource_id", "status_code", "expected_id_format"],
     },
+    "invalid_param": {
+        "template": "Parameter(s) provided are not supported for resource '{resource_type}'. {diagnostics}",
+        "next_steps": "Supported search parameters for '{resource_type}': {supported_params}. Correct any typos or use one of these parameters.",
+        "required_fields": ["resource_type", "status_code", "supported_params"],
+    },
+    "missing_param": {
+        "template": "No query parameters were provided for resource '{resource_type}'. At least one search parameter is required.",
+        "next_steps": "Specify at least one valid search parameter for '{resource_type}'. See the API documentation for supported parameters.",
+        "required_fields": ["resource_type", "status_code"],
+    },
+    "invalid-type": {
+        "template": "Resource type '{resource_type}' is not supported.",
+        "next_steps": "Check the spelling or refer to the list of supported resource types.",
+        "required_fields": ["resource_type", "status_code"],
+    },
     # Add more error types here as needed
 }
 
@@ -28,6 +43,20 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
     """
     error_def = CODE_ERROR_DEFS.get(error_type)
     missing = []
+    supported_param_schema = error_data.get("supported_param_schema")
+    pretty_schema = None
+    if supported_param_schema:
+        # Pretty print as a markdown table
+        headers = ["name", "type", "documentation", "example"]
+        rows = []
+        for param in supported_param_schema:
+            row = [param.get(h, "") or "" for h in headers]
+            rows.append(row)
+        # Build markdown table
+        table = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"]*len(headers)) + " |"]
+        for row in rows:
+            table.append("| " + " | ".join(row) + " |")
+        pretty_schema = "\n".join(table)
     if error_def:
         required = error_def.get("required_fields", [])
         for f in required:
@@ -38,8 +67,11 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
         for f in required:
             if f not in format_data:
                 format_data[f] = f"<missing {f}>"
-        friendly_message = error_def["template"].format(**format_data)
+        # Append pretty schema to next_steps if present
         next_steps = error_def.get("next_steps", "").format(**format_data)
+        if pretty_schema:
+            next_steps += "\n\n#### Supported Search Parameters\n" + pretty_schema
+        friendly_message = error_def["template"].format(**format_data)
         error_text = error_type.replace('_', ' ').capitalize()
         issues = error_data.get("issues", [])
         if missing:
