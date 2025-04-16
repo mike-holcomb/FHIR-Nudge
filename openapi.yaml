@@ -1,0 +1,171 @@
+openapi: 3.0.3
+info:
+  title: FHIR Nudge Proxy API
+  version: 0.1.0
+  description: |
+    The FHIR Nudge Proxy provides a simplified, standardized interface for reading FHIR resources from a backend FHIR server.
+    All error responses conform to the AIX error schema, providing actionable diagnostics for clients and LLMs.
+servers:
+  - url: http://localhost:8888
+paths:
+  /readResource/{resource}/{resource_id}:
+    get:
+      summary: Retrieve a FHIR resource by type and ID
+      description: >
+        Fetches a resource of the specified FHIR type and ID from the backend server.
+        Returns the resource as-is if found. If the resource type is invalid or the resource is not found,
+        returns a standardized error response with actionable diagnostics.
+      parameters:
+        - in: path
+          name: resource
+          schema:
+            type: string
+          required: true
+          description: |
+            The FHIR resource type (e.g., Patient, Observation).
+            Must be a valid type supported by the backend server.
+            Example: Patient
+        - in: path
+          name: resource_id
+          schema:
+            type: string
+          required: true
+          description: |
+            The unique identifier of the FHIR resource.
+            Example: S123ABC9
+      responses:
+        '200':
+          description: Resource found and returned as JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                description: FHIR resource (pass-through)
+              example:
+                resourceType: Patient
+                id: S123ABC9
+                name:
+                  - family: Smith
+                    given: [John]
+        '400':
+          description: |
+            Bad Request. This error occurs if:
+              - The resource type is not supported or misspelled (e.g., 'Patiant' instead of 'Patient')
+              - The resource ID format is invalid (e.g., contains spaces or special characters)
+              - Required parameters are missing
+            The response includes actionable diagnostics and, where possible, suggestions for correction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIXErrorResponse'
+              examples:
+                invalid_type:
+                  summary: Invalid resource type
+                  value:
+                    error: "Invalid resource type"
+                    friendly_message: "The resource type 'Foo' is not supported."
+                    issues:
+                      - code: "invalid-type"
+                        diagnostics: "Resource type 'Foo' is not supported. Did you mean: Patient?"
+                        severity: "error"
+                        details: "Supported types: Patient, Observation, ..."
+                    status_code: 400
+                invalid_id_format:
+                  summary: Invalid ID format
+                  value:
+                    error: "Invalid ID format"
+                    friendly_message: "The ID 'bad id!' is not valid for resource type 'Patient'."
+                    issues:
+                      - code: "invalid-id-format"
+                        diagnostics: "ID 'bad id!' contains invalid characters. Expected format: [A-Za-z0-9-\\.]{1,64}"
+                        severity: "error"
+                        details: "ID must be alphanumeric and up to 64 characters."
+                    status_code: 400
+        '404':
+          description: |
+            Not Found. This error occurs if:
+              - The specified resource does not exist on the backend FHIR server.
+              - The resource type is valid, but the ID does not match any resource.
+            The response includes diagnostics indicating the resource could not be found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIXErrorResponse'
+              examples:
+                not_found:
+                  summary: Resource not found
+                  value:
+                    error: "Not found"
+                    friendly_message: "No Patient resource was found with ID 'S9X7YQZ1'"
+                    issues:
+                      - code: "not_found"
+                        diagnostics: "Resource Patient/S9X7YQZ1 is not known"
+                        severity: "error"
+                        details: ""
+                    status_code: 404
+        '502':
+          description: |
+            Bad Gateway. This error occurs if the backend FHIR server is unreachable or returns an unexpected error.
+            The response includes diagnostics about the upstream failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIXErrorResponse'
+              examples:
+                upstream_failure:
+                  summary: Upstream FHIR server error
+                  value:
+                    error: "Upstream error"
+                    friendly_message: "The backend FHIR server could not be reached."
+                    issues:
+                      - code: "upstream"
+                        diagnostics: "Connection refused to FHIR server at http://example-fhir-server"
+                        severity: "error"
+                        details: ""
+                    status_code: 502
+components:
+  schemas:
+    AIXErrorResponse:
+      type: object
+      description: >
+        Standardized error response format for all errors returned by the FHIR Nudge Proxy.
+        Includes actionable diagnostics for clients and LLMs.
+        Multiple issues may be present if more than one problem is detected.
+      properties:
+        error:
+          type: string
+          description: Short error type or code.
+        friendly_message:
+          type: string
+          description: Human-friendly summary of the error.
+        issues:
+          type: array
+          description: List of detailed diagnostics and actionable information. Multiple issues may be present for compound errors.
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                description: Machine-readable error code.
+              diagnostics:
+                type: string
+                description: Detailed explanation of the error.
+              severity:
+                type: string
+                description: Severity of the issue (e.g., error, warning).
+              details:
+                type: string
+                description: Additional details or context.
+        next_steps:
+          type: string
+          nullable: true
+          description: Suggested next steps for resolving the error, if available.
+        resource_id:
+          type: string
+          description: The resource ID involved in the error, if applicable.
+        resource_type:
+          type: string
+          description: The resource type involved in the error, if applicable.
+        status_code:
+          type: integer
+          description: HTTP status code associated with the error.

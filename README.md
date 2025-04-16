@@ -22,6 +22,7 @@ This project implements a Flask-based proxy server that sits between a HAPI FHIR
 - [License](#license)
 - [Documentation](#documentation)
 - [Error Handling & AIX Error Schema](#error-handling--aix-error-schema)
+- [OpenAPI Specification, Testing, and Coverage](#openapi-specification-testing-and-coverage)
 
 ---
 
@@ -125,6 +126,46 @@ FHIR Nudge uses a standardized, actionable error handling system designed for bo
 - **No legacy or top-level ad-hoc fields** like `supported_types` or `did_you_mean`—all context is in the `issues` array in the response.
 
 See [docs/ERROR_HANDLING_GUIDELINES.md](docs/ERROR_HANDLING_GUIDELINES.md) for implementation details and [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for the schema.
+
+---
+
+## OpenAPI Specification, Testing, and Coverage
+
+### OpenAPI Support
+- The project includes a hand-authored OpenAPI 3.0 specification (`openapi.yaml`) describing all public API endpoints, parameters, request/response schemas, and error formats (including the AIX error schema).
+- The spec is served at `/openapi.yaml` by the Flask app for easy access by humans, LLMs, and tools.
+- The spec is richly documented with descriptions and examples to maximize clarity and LLM-friendliness.
+
+### Automated OpenAPI Validation
+- The test suite includes `tests/test_openapi_spec.py`, which uses `openapi-spec-validator` to ensure the OpenAPI spec is always valid and standards-compliant.
+- Run all tests (including spec validation) with:
+  ```bash
+  poetry run pytest
+  ```
+
+### Contract Testing with Schemathesis
+- End-to-end (E2E) testing is supported via [Schemathesis](https://schemathesis.readthedocs.io/), which generates and runs property-based tests against the live API based on the OpenAPI spec.
+- Scripts in the `e2e/` folder:
+  - `run_proxy.sh`: Starts the Flask proxy server on port 8888.
+  - `run_schemathesis.sh`: Runs Schemathesis against the running proxy.
+  - `run_e2e.sh`: Automates the full E2E workflow (starts proxy, runs tests, shuts down proxy).
+- See `e2e/README.md` for complete usage instructions.
+
+### Coverage Caveats & Improving Test Cases
+- By default, Schemathesis generates random and edge-case inputs, so most responses are 4xx errors unless the backend is seeded with valid FHIR resources.
+- **TODO:** Add scripts or instructions for seeding the backend with known-good example resources to enable 200 OK test coverage, and add parameter examples to the OpenAPI spec for targeted testing (`--examples-as-cases`).
+
+### How to Update the OpenAPI Spec
+1. Edit `openapi.yaml` to reflect any new endpoints, parameters, or changes in error handling.
+2. Add rich descriptions and examples for new endpoints and schemas.
+3. Run `poetry run pytest` to validate the spec and ensure all tests pass.
+4. Optionally, run E2E tests:
+   ```bash
+   cd e2e
+   ./run_proxy.sh   # in one terminal
+   ./run_schemathesis.sh   # in another terminal
+   ```
+5. For full contract coverage, ensure your backend FHIR server contains resources matching the examples in your spec.
 
 ---
 
