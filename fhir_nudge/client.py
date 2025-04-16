@@ -30,7 +30,21 @@ class FhirNudgeClient:
         resp.raise_for_status()
         return resp.json()
 
-    # TODO: Implement search_resource(self, resource_type: str, params: dict) -> dict
+    def search_resource(self, resource_type: str, params: dict) -> Dict[str, Any]:
+        """
+        Search for FHIR resources of a given type with specified query parameters.
+        Args:
+            resource_type: The FHIR resource type (e.g., 'Patient').
+            params: Dictionary of search parameters (e.g., {'name': 'Smith', 'gender': 'female'}).
+        Returns:
+            The search result as a dict (usually a FHIR Bundle), or raises HTTPError on failure.
+        """
+        path = f"/searchResource/{resource_type}"
+        url = urljoin(self.base_url + '/', path)
+        resp = requests.get(url, params=params, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
+
     # TODO: Implement create_resource(self, resource_type: str, resource: dict) -> dict
     # TODO: Implement update_resource(self, resource_type: str, resource_id: str, resource: dict) -> dict
     # TODO: Implement delete_resource(self, resource_type: str, resource_id: str) -> dict
