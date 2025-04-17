@@ -509,6 +509,27 @@ def read_resource(resource: str, resource_id: str) -> Tuple[Response, int]:
         return resp, proxied.status_code
     else:
         print(f"Proxy error from FHIR server: status={proxied.status_code}, body={proxied.text}")
+        # Normalize any 404 from FHIR server to 'not_found' error regardless of OperationOutcome code
+        if proxied.status_code == 404:
+            try:
+                err = proxied.json()
+                issues_list = err.get("issue", [])
+                diagnostics = issues_list[0].get("diagnostics") if issues_list else None
+            except Exception:
+                diagnostics = None
+            diagnostics = diagnostics or f"No {resource} resource was found with ID '{resource_id}'."
+            error_data = {
+                "resource_type": resource,
+                "resource_id": resource_id,
+                "status_code": proxied.status_code,
+                "issues": [{
+                    "severity": "error",
+                    "code": "not-found",
+                    "diagnostics": diagnostics
+                }],
+            }
+            aix_error = render_error("not_found", error_data)
+            return jsonify(aix_error.model_dump()), proxied.status_code
         try:
             error_body = proxied.json()
             if (
@@ -527,6 +548,7 @@ def read_resource(resource: str, resource_id: str) -> Tuple[Response, int]:
                         "diagnostics": diagnostics
                     }],
                 }
+                # Use specific 'not_found' template instead of generic fallback
                 aix_error = render_error("not_found", error_data)
                 return jsonify(aix_error.model_dump()), proxied.status_code
         except Exception as ex:
