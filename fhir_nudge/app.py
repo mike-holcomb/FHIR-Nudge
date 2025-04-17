@@ -172,6 +172,52 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
     # TODO: Add value format checks, reserved param warnings, etc.
     return True, None
 
+def _enrich_search_resource_error(resource: str, fhir_response: requests.Response) -> tuple:
+    """
+    Handle and enrich error messages from FHIR server responses for /searchResource.
+    Returns (Flask response, HTTP status code).
+    
+    TODO: Handle invalid search parameter values (400):
+        - Identify which parameter(s) are invalid
+        - Provide expected format or allowed values
+        - Suggest corrections if possible
+
+    TODO: Handle unsupported/unknown search parameters (400):
+        - List unsupported parameter(s)
+        - Suggest closest valid parameters
+        - Show markdown table of supported parameters
+
+    TODO: Handle malformed requests (400):
+        - Show problematic part of request
+        - Suggest correct structure
+
+    TODO: Handle OperationOutcome with multiple issues (400/422):
+        - Aggregate issues in a readable format
+        - Prioritize actionable diagnostics
+
+    TODO: Handle 404 Not Found (if not treating as empty result):
+        - Explain no match for search criteria
+        - Suggest next steps
+
+    TODO: Handle 405/422 errors:
+        - Explain why the request method/entity is not allowed/processable
+        - Suggest corrections
+
+    # Implementation will parse the FHIR OperationOutcome and enrich as needed.
+    # For now, return a generic error response as a placeholder.
+    diagnostics = f"FHIR server returned status {fhir_response.status_code}: {fhir_response.text}"
+    error_data = {
+        "resource_type": resource,
+        "status_code": fhir_response.status_code,
+        "issues": [{
+            "severity": "error",
+            "code": "unknown",
+            "diagnostics": diagnostics
+        }],
+    }
+    aix_error = render_error("unknown_error", error_data)
+    return jsonify(aix_error.model_dump()), fhir_response.status_code
+
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
 def read_resource(resource: str, resource_id: str) -> Response:
     valid_types = set(get_capability_index().keys())
@@ -266,6 +312,8 @@ def search_resource(resource):
     # Forward query params to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}"
     resp = requests.get(fhir_url, params=request.args)
+    if resp.status_code >= 400:
+        return _enrich_search_resource_error(resource, resp)
     filtered_headers = filter_headers(resp.headers)
     return Response(resp.content, status=resp.status_code, headers=filtered_headers)
 
