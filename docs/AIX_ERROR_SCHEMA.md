@@ -38,7 +38,8 @@ For implementation details, see the proxy code and associated tests.
     {
       "severity": "error",
       "code": "not-found",
-      "diagnostics": "No resource found with id 123"
+      "diagnostics": "No resource found with id 123",
+      "details": null
     }
   ]
 }
@@ -53,6 +54,7 @@ For implementation details, see the proxy code and associated tests.
 - `resource_id`: (Optional) The specific resource ID requested.
 - `status_code`: The HTTP status code returned.
 - `issues`: (Optional) List of structured FHIR OperationOutcome issues, if available.
+- `details`: (Optional) Additional structured details for each issue, suitable for machine consumption.
 
 ## Contract for Error Generation
 
@@ -75,7 +77,8 @@ For implementation details, see the proxy code and associated tests.
     {
       "severity": "error",
       "code": "invalid-type",
-      "diagnostics": "Resource type 'NotAType' is not supported. Supported types: ['Patient', 'Observation']. Did you mean: 'Patient'?"
+      "diagnostics": "Resource type 'NotAType' is not supported. Supported types: ['Patient', 'Observation']. Did you mean: 'Patient'?",
+      "details": null
     }
   ]
 }
