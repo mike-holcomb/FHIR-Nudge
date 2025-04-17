@@ -19,9 +19,10 @@ class OperationOutcomeIssue(BaseModel):
     diagnostics: Optional[str] = Field(None, description="Human-/AI-friendly explanation of the issue.")
     details: Optional[str] = Field(None, description="Optional structured details suitable for machine consumption.")
 
-    # Pydantic v2 config: example schema via ConfigDict
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        """Pydantic config using 'json_schema_extra' for OperationOutcomeIssue example."""
+        # Pydantic v2: rename 'schema_extra' to 'json_schema_extra'
+        json_schema_extra = {
             "example": {
                 "severity": "error",
                 "code": "not-found",
@@ -29,7 +30,6 @@ class OperationOutcomeIssue(BaseModel):
                 "details": None
             }
         }
-    )
 
 class AIXErrorResponse(BaseModel):
     """
@@ -51,9 +51,10 @@ class AIXErrorResponse(BaseModel):
     status_code: int = Field(..., description="HTTP status code returned by the operation.")
     issues: List[OperationOutcomeIssue] = Field(default_factory=list, description="List of detailed issue objects.")
 
-    # Pydantic v2 config: example schema via ConfigDict
-    model_config = ConfigDict(
-        json_schema_extra={
+    class Config:
+        """Pydantic config using 'json_schema_extra' for AIXErrorResponse example."""
+        # Pydantic v2: rename 'schema_extra' to 'json_schema_extra'
+        json_schema_extra = {
             "example": {
                 "error": "Resource not found",
                 "friendly_message": "No Patient resource was found with ID '123'. Double-check the ID or try searching for patients.",
@@ -71,4 +72,3 @@ class AIXErrorResponse(BaseModel):
                 ]
             }
         }
-    )
