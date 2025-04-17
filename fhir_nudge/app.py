@@ -14,6 +14,8 @@ Environment variables:
 
 See docs/AIX_ERROR_SCHEMA.md and docs/ERROR_HANDLING_GUIDELINES.md for details.
 """
+# Type hints
+from typing import Dict, List, Any, Mapping, Tuple, Optional, Union
 
 # Standard library imports
 import os
@@ -28,7 +30,6 @@ from dotenv import load_dotenv
 
 # Internal imports
 from fhir_nudge.error_renderer import render_error
-from typing import Dict, List, Any, Mapping, Tuple, Optional
 
 # Initialize Flask application for proxy endpoints
 app = Flask(__name__)
@@ -413,37 +414,52 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
     aix_error = render_error("unknown_error", error_data)
     return jsonify(aix_error.model_dump()), fhir_response.status_code
 
-def _empty_search_bundle_response(resource: str, query_params: dict) -> Response:
+def _empty_search_bundle_response(
+    resource: str,
+    query_params: Mapping[str, Union[str, List[str]]]
+) -> Tuple[Response, int]:
     """
-    Return an empty search result bundle with a friendly message and next_steps for LLMs/humans.
+    Generate a friendly empty Bundle response with guidance when no search results are found.
+
+    Args:
+        resource (str): FHIR resource type that was searched.
+        query_params (Mapping[str, Union[str, List[str]]]): Original search parameters.
+
+    Returns:
+        Tuple[Response, int]: Flask JSON response of an empty Bundle and HTTP 200 status.
     """
     from flask import jsonify
-    # Format query params as a readable string
+    # Render received query parameters into a human-readable block
     qp_lines = "\n".join(f"  {k}: {v}" for k, v in query_params.items())
+    # Craft next_steps instructions pointing users (or LLMs) to adjust their search
     next_steps = (
         "Double-check the search parameters you used:\n\n"
         f"{qp_lines}\n\n"
         "If this was not your intent, try adjusting the search parameters. "
         "See below for supported parameters."
     )
-    # Optionally, add the supported_param_schema markdown table (reuse your existing logic)
+    # Build a markdown table of supported parameters for inclusion in next_steps
     supported_param_objs = get_capability_index().get(resource, [])
     if supported_param_objs:
         table = "| name | type | documentation | example |\n| --- | --- | --- | --- |\n"
         for param in supported_param_objs:
             table += f"| {param.get('name','')} | {param.get('type','')} | {param.get('documentation','')} | {param.get('example','')} |\n"
         next_steps += f"\n\nSupported search parameters for '{resource}':\n" + table
+    # Assemble the FHIR Bundle skeleton with friendly_message and next_steps
     bundle = {
         "resourceType": "Bundle",
         "entry": [],
         "friendly_message": f"No {resource} resources matched your search criteria.",
         "next_steps": next_steps,
     }
+    # Return HTTP 200 with an empty Bundle and actionable guidance
     return jsonify(bundle), 200
 
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
-def read_resource(resource: str, resource_id: str) -> Response:
+def read_resource(resource: str, resource_id: str) -> Tuple[Response, int]:
+    """GET /readResource/<resource>/<resource_id>: Proxy a read request to the FHIR server."""
     valid_types = set(get_capability_index().keys())
+    # 1️⃣ Validate that the resource type exists via the capability index
     if resource not in valid_types:
         close = difflib.get_close_matches(resource, valid_types, n=3)
         diagnostics = f"Resource type '{resource}' is not supported. Supported types: {sorted(valid_types)}."
@@ -465,6 +481,7 @@ def read_resource(resource: str, resource_id: str) -> Response:
 
     # print(f"resource_id received: '{resource_id}'")
     if not FHIR_ID_PATTERN.match(resource_id):
+        # 2️⃣ Validate the resource_id format against FHIR_ID_PATTERN
         diagnostics = f"The ID '{resource_id}' is not valid for resource type '{resource}'. Expected format: [A-Za-z0-9-\\.]{{1,64}}."
         error_data = {
             "resource_type": resource,
@@ -481,13 +498,15 @@ def read_resource(resource: str, resource_id: str) -> Response:
         return jsonify(aix_error.model_dump()), 400
 
     fhir_url = f"{FHIR_SERVER_URL}/{resource}/{resource_id}"
+    # 3️⃣ Forward the GET to the FHIR server
     proxied = requests.get(fhir_url)
     safe_headers = filter_headers(proxied.headers)
     if 200 <= proxied.status_code < 300:
         resp = make_response(proxied.content, proxied.status_code)
         for k, v in safe_headers.items():
             resp.headers[k] = v
-        return resp
+        # 4️⃣ Return proxied response with sanitized headers
+        return resp, proxied.status_code
     else:
         print(f"Proxy error from FHIR server: status={proxied.status_code}, body={proxied.text}")
         try:
@@ -528,14 +547,17 @@ def read_resource(resource: str, resource_id: str) -> Response:
         return jsonify(aix_error.model_dump()), proxied.status_code
 
 @app.route('/searchResource/<resource>', methods=['GET'])
-def search_resource(resource):
+def search_resource(resource: str) -> Tuple[Response, int]:
+    """GET /searchResource/<resource>: Proxy a FHIR search with prevalidation and enriched errors."""
     is_valid, error_response = _prevalidate_search_resource(resource, request.args)
+    # 1️⃣ Prevalidate resource type and query params
     if not is_valid:
         return error_response
-    # Forward query params to FHIR server
+    # 2️⃣ Forward validated search to FHIR server
     fhir_url = f"{FHIR_SERVER_URL}/{resource}"
     resp = requests.get(fhir_url, params=request.args)
     if resp.status_code >= 400:
+        # 3️⃣ On FHIR errors, enrich and return AIX-formatted errors
         return _enrich_search_resource_error(resource, resp)
     # If the result is an empty Bundle, return a friendly message and next_steps
     try:
@@ -545,18 +567,24 @@ def search_resource(resource):
             and data.get("resourceType") == "Bundle"
             and ("entry" not in data or not data["entry"])
         ):
+            # 4️⃣ On empty Bundle, return friendly guidance instead of empty results
             return _empty_search_bundle_response(resource, request.args)
     except Exception:
         pass
     filtered_headers = filter_headers(resp.headers)
+    # 5️⃣ Return successful Bundle with filtered headers
     return Response(resp.content, status=resp.status_code, headers=filtered_headers)
 
 @app.route('/openapi.yaml')
 def openapi_yaml():
+    """Serve the OpenAPI spec for FHIR Nudge in YAML format."""
+    # Use send_file to serve the OpenAPI spec from the project root
     return send_file(os.path.join(os.path.dirname(__file__), '..', 'openapi.yaml'), mimetype='application/yaml')
 
 @app.errorhandler(404)
 def handle_404(e):
+    """Convert any Flask 404 into an AIX 'not-found' error response."""
+    # Extract route args for context
     resource_type = request.view_args.get('resource') if request.view_args and 'resource' in request.view_args else None
     resource_id = request.view_args.get('resource_id') if request.view_args and 'resource_id' in request.view_args else None
     diagnostics = getattr(e, 'description', str(e))
@@ -570,11 +598,14 @@ def handle_404(e):
             "diagnostics": diagnostics
         }],
     }
+    # Build and return AIX-formatted error payload
     aix_error = render_error("not_found", error_data)
     return jsonify(aix_error.model_dump()), 404
 
 @app.errorhandler(400)
 def handle_400(e):
+    """Convert any Flask 400 into an AIX 'invalid' error response."""
+    # Extract route args for context
     resource_type = request.view_args.get('resource') if request.view_args and 'resource' in request.view_args else None
     resource_id = request.view_args.get('resource_id') if request.view_args and 'resource_id' in request.view_args else None
     diagnostics = getattr(e, 'description', str(e))
@@ -588,9 +619,11 @@ def handle_400(e):
             "diagnostics": diagnostics
         }],
     }
+    # Build and return AIX-formatted error payload
     aix_error = render_error("unknown_error", error_data)
     return jsonify(aix_error.model_dump()), 400
 
+# Entry point: run Flask app on PROXY_PORT (default 8888)
 if __name__ == '__main__':
     import os
     port = int(os.environ.get("PROXY_PORT", 8888))
