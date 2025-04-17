@@ -4,6 +4,7 @@ See docs/AIX_ERROR_SCHEMA.md and docs/ERROR_HANDLING_GUIDELINES.md for details.
 """
 from .schemas import AIXErrorResponse
 from typing import List, Dict, Any, Optional
+import logging
 
 ## CODE_ERROR_DEFS: unified mapping of error types to template definitions
 # Keys:
@@ -88,21 +89,35 @@ def render_error(error_type: str, error_data: Dict[str, Any]) -> AIXErrorRespons
 
     error_def = CODE_ERROR_DEFS.get(error_type)
     missing = []  # Collect any required fields that are not present
-    # Compose next_steps from template, then prepend markdown table if present
+
+    # Render messages from templates if definition exists, otherwise fallback
     if error_def:
-        friendly_message = error_def["template"].format(**error_data)
-        next_steps = error_def.get("next_steps", "").format(**error_data)
+        # Prepare safe format_data, filling placeholders for missing required fields
+        format_data = dict(error_data)
+        for field in error_def.get("required_fields", []):
+            if format_data.get(field) is None:
+                format_data[field] = "" if field == "diagnostics" else f"<missing {field}>"
+        # Render friendly_message
+        friendly_message = error_def["template"].format(**format_data)
+        # Render next_steps, default to None on failure
+        try:
+            next_steps = error_def.get("next_steps", "").format(**format_data)
+        except Exception:
+            next_steps = None
         if pretty_schema:
-            # Prepend markdown table and an extra newline for readability
-            next_steps = f"{pretty_schema}\n\n{next_steps}"
+            # Prepend markdown table for supported params
+            next_steps = f"{pretty_schema}\n\n{next_steps}" if next_steps else pretty_schema
     else:
+        # Unknown error_type: log warning and use diagnostics fallback
+        logging.warning(f"render_error: Unknown error_type '{error_type}'")
         friendly_message = error_data.get("diagnostics", "An error occurred.")
-        next_steps = error_data.get("next_steps", "")
+        next_steps = None
         if pretty_schema:
-            next_steps = f"{pretty_schema}\n\n{next_steps}"
+            next_steps = pretty_schema
 
     error_text = error_type.replace('_', ' ').capitalize()
     issues = error_data.get("issues", [])
+
     if error_def:
         required = error_def.get("required_fields", [])
         for f in required:
