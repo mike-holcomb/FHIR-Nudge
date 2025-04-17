@@ -374,6 +374,34 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
     aix_error = render_error("unknown_error", error_data)
     return jsonify(aix_error.model_dump()), fhir_response.status_code
 
+def _empty_search_bundle_response(resource: str, query_params: dict) -> Response:
+    """
+    Return an empty search result bundle with a friendly message and next_steps for LLMs/humans.
+    """
+    from flask import jsonify
+    # Format query params as a readable string
+    qp_lines = "\n".join(f"  {k}: {v}" for k, v in query_params.items())
+    next_steps = (
+        "Double-check the search parameters you used:\n\n"
+        f"{qp_lines}\n\n"
+        "If this was not your intent, try adjusting the search parameters. "
+        "See below for supported parameters."
+    )
+    # Optionally, add the supported_param_schema markdown table (reuse your existing logic)
+    supported_param_objs = get_capability_index().get(resource, [])
+    if supported_param_objs:
+        table = "| name | type | documentation | example |\n| --- | --- | --- | --- |\n"
+        for param in supported_param_objs:
+            table += f"| {param.get('name','')} | {param.get('type','')} | {param.get('documentation','')} | {param.get('example','')} |\n"
+        next_steps += f"\n\nSupported search parameters for '{resource}':\n" + table
+    bundle = {
+        "resourceType": "Bundle",
+        "entry": [],
+        "friendly_message": f"No {resource} resources matched your search criteria.",
+        "next_steps": next_steps,
+    }
+    return jsonify(bundle), 200
+
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
 def read_resource(resource: str, resource_id: str) -> Response:
     valid_types = set(get_capability_index().keys())
@@ -470,6 +498,17 @@ def search_resource(resource):
     resp = requests.get(fhir_url, params=request.args)
     if resp.status_code >= 400:
         return _enrich_search_resource_error(resource, resp)
+    # If the result is an empty Bundle, return a friendly message and next_steps
+    try:
+        data = resp.json()
+        if (
+            isinstance(data, dict)
+            and data.get("resourceType") == "Bundle"
+            and ("entry" not in data or not data["entry"])
+        ):
+            return _empty_search_bundle_response(resource, request.args)
+    except Exception:
+        pass
     filtered_headers = filter_headers(resp.headers)
     return Response(resp.content, status=resp.status_code, headers=filtered_headers)
 
