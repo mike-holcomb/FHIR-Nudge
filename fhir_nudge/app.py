@@ -203,8 +203,156 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
         - Explain why the request method/entity is not allowed/processable
         - Suggest corrections
 """
-    # Implementation will parse the FHIR OperationOutcome and enrich as needed.
-    # For now, return a generic error response as a placeholder.
+    # Try to parse the FHIR OperationOutcome for invalid parameter value errors
+    try:
+        error_body = fhir_response.json()
+        if (
+            isinstance(error_body, dict)
+            and error_body.get("resourceType") == "OperationOutcome"
+            and error_body.get("issue")
+        ):
+            # Handle invalid search parameter value issues
+            invalid_param_issues = [
+                issue for issue in error_body["issue"]
+                if issue.get("code") in ("invalid", "value")
+            ]
+            if invalid_param_issues:
+                issues = []
+                for issue in invalid_param_issues:
+                    diagnostics = issue.get("diagnostics", "Invalid parameter value.")
+                    details = issue.get("details", {}).get("text") if isinstance(issue.get("details"), dict) else issue.get("details")
+                    issues.append({
+                        "severity": issue.get("severity", "error"),
+                        "code": issue.get("code", "invalid"),
+                        "diagnostics": diagnostics,
+                        "details": details or "<missing details>"
+                    })
+                supported_param_objs = get_capability_index().get(resource, [])
+                error_data = {
+                    "resource_type": resource,
+                    "status_code": fhir_response.status_code,
+                    "issues": issues,
+                    "supported_param_schema": supported_param_objs,
+                    "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                }
+                aix_error = render_error("invalid_param", error_data)
+                return jsonify(aix_error.model_dump()), fhir_response.status_code
+
+            # Handle unsupported/unknown search parameter issues
+            unknown_param_issues = [
+                issue for issue in error_body["issue"]
+                if issue.get("code") in ("not-supported", "unknown", "processing")
+            ]
+            if unknown_param_issues:
+                issues = []
+                unsupported_params = []
+                for issue in unknown_param_issues:
+                    diagnostics = issue.get("diagnostics", "Unsupported or unknown parameter.")
+                    details = issue.get("details", {}).get("text") if isinstance(issue.get("details"), dict) else issue.get("details")
+                    issues.append({
+                        "severity": issue.get("severity", "error"),
+                        "code": issue.get("code", "invalid-param"),
+                        "diagnostics": diagnostics,
+                        "details": details or "<missing details>"
+                    })
+                    # Try to extract param name from diagnostics or details
+                    if diagnostics:
+                        import re
+                        match = re.search(r"parameter ['\"]?([\w-]+)['\"]?", diagnostics)
+                        if match:
+                            unsupported_params.append(match.group(1))
+                supported_param_objs = get_capability_index().get(resource, [])
+                error_data = {
+                    "resource_type": resource,
+                    "status_code": fhir_response.status_code,
+                    "unsupported_params": unsupported_params,
+                    "supported_param_schema": supported_param_objs,
+                    "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                    "issues": issues,
+                }
+                aix_error = render_error("invalid_param", error_data)
+                return jsonify(aix_error.model_dump()), fhir_response.status_code
+
+            # Handle malformed request issues (400)
+            malformed_issues = [
+                issue for issue in error_body["issue"]
+                if issue.get("code") in ("structure", "required", "invalid") and issue.get("severity") == "error"
+            ]
+            if malformed_issues:
+                issues = []
+                for issue in malformed_issues:
+                    diagnostics = issue.get("diagnostics", "Malformed request.")
+                    details = issue.get("details", {}).get("text") if isinstance(issue.get("details"), dict) else issue.get("details")
+                    issues.append({
+                        "severity": issue.get("severity", "error"),
+                        "code": issue.get("code", "invalid"),
+                        "diagnostics": diagnostics,
+                        "details": details or "<missing details>"
+                    })
+                supported_param_objs = get_capability_index().get(resource, [])
+                error_data = {
+                    "resource_type": resource,
+                    "status_code": fhir_response.status_code,
+                    "issues": issues,
+                    "supported_param_schema": supported_param_objs,
+                    "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                }
+                aix_error = render_error("invalid_param", error_data)
+                return jsonify(aix_error.model_dump()), fhir_response.status_code
+
+            # Handle OperationOutcome with multiple issues (400/422)
+            actionable_issues = [
+                issue for issue in error_body["issue"]
+                if issue.get("severity") in ("error", "warning")
+            ]
+            if len(actionable_issues) > 1:
+                issues = []
+                for issue in actionable_issues:
+                    diagnostics = issue.get("diagnostics", "Issue encountered.")
+                    details = issue.get("details", {}).get("text") if isinstance(issue.get("details"), dict) else issue.get("details")
+                    issues.append({
+                        "severity": issue.get("severity", "error"),
+                        "code": issue.get("code", "unknown"),
+                        "diagnostics": diagnostics,
+                        "details": details or "<missing details>"
+                    })
+                supported_param_objs = get_capability_index().get(resource, [])
+                error_data = {
+                    "resource_type": resource,
+                    "status_code": fhir_response.status_code,
+                    "issues": issues,
+                    "supported_param_schema": supported_param_objs,
+                    "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                }
+                aix_error = render_error("invalid_param", error_data)
+                return jsonify(aix_error.model_dump()), fhir_response.status_code
+    except Exception as ex:
+        print(f"Error parsing FHIR OperationOutcome for invalid/unknown param: {ex}")
+    # Handle 405 Method Not Allowed or 422 Unprocessable Entity
+    if fhir_response.status_code in (405, 422):
+        diagnostics = None
+        try:
+            error_body = fhir_response.json()
+            if isinstance(error_body, dict) and error_body.get("resourceType") == "OperationOutcome":
+                diagnostics = "; ".join(
+                    issue.get("diagnostics", "") for issue in error_body.get("issue", []) if issue.get("diagnostics")
+                )
+        except Exception:
+            pass
+        diagnostics = diagnostics or f"FHIR server returned status {fhir_response.status_code}: {fhir_response.text}"
+        error_data = {
+            "resource_type": resource,
+            "status_code": fhir_response.status_code,
+            "issues": [{
+                "severity": "error",
+                "code": "method-not-allowed" if fhir_response.status_code == 405 else "unprocessable-entity",
+                "diagnostics": diagnostics,
+                "details": "Request method not allowed or entity unprocessable. See diagnostics."
+            }],
+        }
+        aix_error = render_error("invalid_param", error_data)
+        return jsonify(aix_error.model_dump()), fhir_response.status_code
+    # Fallback: generic error response
     diagnostics = f"FHIR server returned status {fhir_response.status_code}: {fhir_response.text}"
     error_data = {
         "resource_type": resource,
