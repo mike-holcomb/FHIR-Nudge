@@ -26,8 +26,8 @@ def start_proxy():
     proc = subprocess.Popen(
         [sys.executable, "-m", "fhir_nudge.app"],
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=None,  # Inherit parent's stdout
+        stderr=None,  # Inherit parent's stderr
     )
     # Wait for the server to come up or fail
     for _ in range(20):  # wait up to ~10s
@@ -41,13 +41,16 @@ def start_proxy():
             break  # Process exited
         time.sleep(0.5)
     # Check if process died or port is still occupied
-    out, err = proc.communicate(timeout=2)
-    if b"Address already in use" in err or b"Address already in use" in out:
-        print("\nERROR: Could not start proxy server: port 8888 is already in use.\n", file=sys.stderr)
+    if proc.poll() is not None:
+        out, err = proc.communicate()
+        if b"Address already in use" in err or b"Address already in use" in out:
+            print("\nERROR: Could not start proxy server: port 8888 is already in use.\n", file=sys.stderr)
+            sys.exit(2)
+        print("\nERROR: Proxy server did not start successfully.\n", file=sys.stderr)
+        print(out.decode())
+        print(err.decode())
         sys.exit(2)
     print("\nERROR: Proxy server did not start successfully.\n", file=sys.stderr)
-    print(out.decode())
-    print(err.decode())
     sys.exit(2)
 
 def stop_proxy(proc):

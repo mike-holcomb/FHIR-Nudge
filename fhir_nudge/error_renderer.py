@@ -87,13 +87,6 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
             if f not in format_data:
                 # Patch missing diagnostics with empty string for template safety
                 format_data[f] = "" if f == "diagnostics" else f"<missing {f}>"
-        extra_diag = f"Warning: Missing fields for this error: {missing}"
-        issues = list(issues) + [{
-            "severity": "information",
-            "code": "incomplete-context",
-            "diagnostics": extra_diag,
-            "details": "<missing details>"
-        }]
 
     # Patch all issues to include required fields for OperationOutcomeIssue
     patched_issues = []
@@ -103,6 +96,15 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
             "code": issue.get("code", "unknown"),
             "diagnostics": issue.get("diagnostics", "<missing diagnostics>"),
             "details": issue.get("details", "<missing details>")
+        })
+
+    # Add a warning issue only if there are missing required fields
+    if missing:
+        patched_issues.append({
+            "severity": "information",
+            "code": "incomplete-context",
+            "diagnostics": f"Warning: Missing fields for this error: {missing}",
+            "details": "<missing details>"
         })
 
     # Always include supported_param_schema at top level if present

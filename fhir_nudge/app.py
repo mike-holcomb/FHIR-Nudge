@@ -101,6 +101,34 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
     # 2. Query parameter name check
     supported_param_objs = capability_idx[resource]
     supported_params = {p["name"] for p in supported_param_objs if p["name"]}
+
+    # --- Duplicate/conflicting param check ---
+    # Flask's request.args is a MultiDict; query_params may be MultiDict or dict
+    param_counts = {}
+    for key in query_params:
+        # query_params.getlist(key) works for MultiDict, returns all values for key
+        values = query_params.getlist(key) if hasattr(query_params, 'getlist') else [query_params[key]]
+        if len(values) > 1:
+            param_counts[key] = len(values)
+    if param_counts:
+        param_list = ', '.join(f"'{k}' ({v} times)" for k, v in param_counts.items())
+        diagnostics = f"Duplicate/conflicting parameter(s) detected: {param_list}. Each parameter should appear only once per request."
+        error_data = {
+            "resource_type": resource,
+            "status_code": 400,
+            "supported_param_schema": supported_param_objs,  # For markdown table
+            "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+            "diagnostics": diagnostics,
+            "issues": [{
+                "severity": "error",
+                "code": "duplicate-param",
+                "diagnostics": diagnostics
+            }],
+            # Add any other fields required by error_renderer or CODE_ERROR_DEFS
+        }
+        aix_error = render_error("invalid_param", error_data)
+        return False, (jsonify(aix_error.model_dump()), 400)
+
     unknown_params = [p for p in query_params if p not in supported_params]
     if unknown_params:
         suggestions = []
@@ -141,7 +169,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
         }
         aix_error = render_error("missing_param", error_data)
         return False, (jsonify(aix_error.model_dump()), 400)
-    # TODO: Add value format checks, duplicate/conflicting param checks, reserved param warnings, etc.
+    # TODO: Add value format checks, reserved param warnings, etc.
     return True, None
 
 @app.route('/readResource/<resource>/<resource_id>', methods=['GET'])
@@ -282,4 +310,6 @@ def handle_400(e):
     return jsonify(aix_error.model_dump()), 400
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get("PROXY_PORT", 8888))
+    app.run(debug=True, port=port)
