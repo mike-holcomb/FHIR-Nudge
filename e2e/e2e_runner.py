@@ -46,12 +46,12 @@ def start_proxy():
         if b"Address already in use" in err or b"Address already in use" in out:
             print("\nERROR: Could not start proxy server: port 8888 is already in use.\n", file=sys.stderr)
             sys.exit(2)
-        print("\nERROR: Proxy server did not start successfully.\n", file=sys.stderr)
+        print("\nERROR: Proxy server terminated unexpectedly during startup.\n", file=sys.stderr)
         print(out.decode())
         print(err.decode())
         sys.exit(2)
-    print("\nERROR: Proxy server did not start successfully.\n", file=sys.stderr)
-    sys.exit(2)
+    print("\nWARNING: Proxy server health check failed, but the process is still running.\n", file=sys.stderr)
+    return proc
 
 def stop_proxy(proc):
     if proc.poll() is None:

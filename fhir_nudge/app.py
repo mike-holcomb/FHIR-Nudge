@@ -424,7 +424,7 @@ def read_resource(resource: str, resource_id: str) -> Response:
         aix_error = render_error("invalid-type", error_data)
         return jsonify(aix_error.model_dump()), 400
 
-    print(f"resource_id received: '{resource_id}'")
+    # print(f"resource_id received: '{resource_id}'")
     if not FHIR_ID_PATTERN.match(resource_id):
         diagnostics = f"The ID '{resource_id}' is not valid for resource type '{resource}'. Expected format: [A-Za-z0-9-\\.]{{1,64}}."
         error_data = {
