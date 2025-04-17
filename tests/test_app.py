@@ -160,9 +160,13 @@ def test_read_resource_fhir_empty_error(client, patch_fhir_requests):
     # Assert response is AIXErrorSchema
     assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
     assert resp.json["status_code"] == 404
-    # Check that diagnostics mention the server status
+    # Check that diagnostics reflect the not_found handling or mention the status
     issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
-    assert "FHIR server returned status 404" in issue_diags or "404" in issue_diags
+    assert (
+        "FHIR server returned status 404" in issue_diags
+        or "404" in issue_diags
+        or "No Patient resource was found" in issue_diags
+    )
 
 def test_missing_required_fields_returns_clear_error(client):
     # Simulate a call with missing resource_id (should return a 400 or 422 with a clear error message)

@@ -18,6 +18,7 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
 - **Explicit Diagnostics:** App code must always provide actionable, context-rich diagnostics for every error path. Do not rely on the renderer to invent or guess error messages.
 - **Renderer as Formatter:** The error renderer standardizes output (friendly_message, next_steps, etc.) but does not generate diagnostics.
 - **No Top-Level Custom Fields:** All actionable information (supported types, suggestions, etc.) must be embedded in the `diagnostics` field of the `issues` array.
+- **Structured Details:** Always include an optional `details` field in each issue for structured data consumption.
 - **Best-Effort, Never Silent:** If some context is missing, diagnostics should explicitly mention what is missing (e.g., “Missing fields: resource_id”).
 
 ---
@@ -26,6 +27,7 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
 
 1. **In your Flask route or error handler, build an `error_data` dict with all context:**
    - Always include `diagnostics` in the `issues` array.
+   - Include `details` in `error_data` or registry template if additional structured context is available.
    - Example:
      ```python
      error_data = {
@@ -35,19 +37,21 @@ FHIR Nudge aims to deliver actionable, user-friendly, and AI/LLM-optimized error
          "issues": [{
              "severity": "error",
              "code": "invalid-type",
-             "diagnostics": "Resource type 'Foo' is not supported. Supported types: ['Patient', 'Observation']. Did you mean: 'Patient'?"
+             "diagnostics": "Resource type 'Foo' is not supported. Supported types: ['Patient', 'Observation']. Did you mean: 'Patient'?",
+             "details": None
          }],
      }
      aix_error = render_error("invalid_resource_type", error_data)
      ```
-2. **The renderer will format the response using the AIX schema.**
-3. **Tests should assert on the presence of actionable diagnostics, not on legacy keys or exception types.**
+2. **The renderer will format the response using the AIX schema, including passing through the `details` field for each issue.**
+3. **Tests should assert on the presence of actionable diagnostics**, not on legacy keys or exception types.
+4. **Tests should assert presence (or default null) of the `details` field** in each issue.
 
 ---
 
 ## Reference
 
-- See [docs/AIX_ERROR_SCHEMA.md](AIX_ERROR_SCHEMA.md) for schema details and examples.
+- See [docs/AIX_ERROR_SCHEMA.md](AIX_ERROR_SCHEMA.md) for schema details and examples, including the optional `details` field.
 
 ---
 
@@ -78,6 +82,7 @@ CODE_ERROR_DEFS = {
   - `template`: The main error message, using Python string formatting with placeholders.
   - `next_steps`: (Optional) Actionable guidance, also supporting placeholders.
   - `required_fields`: List of fields that must be present in `error_data`.
+  - Include `details` in `error_data` or registry template if additional structured context is available.
 - The error rendering logic will automatically check for required fields and raise a clear error if any are missing.
 
 ---
@@ -100,7 +105,7 @@ CODE_ERROR_DEFS = {
   - The error involves dynamic data (e.g., listing supported search params, validation feedback).
 - **How:**
   - Add a template JSON file in `error_registry/` (e.g., `not_found.json`, `searchparam_error.json`).
-  - Use placeholders for dynamic fields (e.g., `{resource_type}`, `{param}`).
+  - Use placeholders for dynamic fields (e.g., `{resource_type}`, `{param}`, `{details}`).
 
 ### Hybrid (Both)
 - **Use when:**
@@ -143,7 +148,7 @@ CODE_ERROR_DEFS = {
     - Document any new placeholders used in your templates.
 2. **When adding a new registry/template-based error:**
     - Add a new template file to `error_registry/` with placeholders and documentation.
-3. **Add/modify tests** to cover the new error path.
+3. Add/modify tests to cover the new error path and assert presence (or default null) of the `details` field.
 
 ---
 

@@ -21,6 +21,7 @@ This project implements a Flask-based proxy server that sits between a HAPI FHIR
 - [Future Work](#future-work)
 - [License](#license)
 - [Documentation](#documentation)
+- [Client Usage](#client-usage)
 - [Error Handling & AIX Error Schema](#error-handling--aix-error-schema)
 - [OpenAPI Specification, Testing, and Coverage](#openapi-specification-testing-and-coverage)
 
@@ -124,6 +125,7 @@ FHIR Nudge uses a standardized, actionable error handling system designed for bo
 - **The error renderer formats and standardizes** the response, using templates for friendly messages and next steps, but does not invent diagnostics.
 - **Diagnostics are always explicit and actionable**—for example, if a resource type is not supported, diagnostics will say so and list supported types. If a typo is detected, diagnostics will suggest corrections.
 - **No legacy or top-level ad-hoc fields** like `supported_types` or `did_you_mean`—all context is in the `issues` array in the response.
+- **Details field:** Each issue may include a `details` property for structured, machine-friendly context alongside diagnostics.
 
 See [docs/ERROR_HANDLING_GUIDELINES.md](docs/ERROR_HANDLING_GUIDELINES.md) for implementation details and [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for the schema.
 
@@ -216,6 +218,8 @@ The proxy will start on [http://localhost:5000](http://localhost:5000).
   - **Description:** Conducts a search on a specified FHIR resource, with query parameters forwarded to the FHIR server.
   - **Example:** `GET /searchResource/Patient?name=john%20doe`
 
+For Python clients, see [docs/CLIENT.md](docs/CLIENT.md) for usage examples via `FhirNudgeClient`.
+
 If errors are encountered—such as unrecognized search parameters or invalid coded values—the proxy will respond with enhanced error messages and suggestions, including a reference subdocument outlining supported parameters for the queried resource.
 
 ---
@@ -223,6 +227,13 @@ If errors are encountered—such as unrecognized search parameters or invalid co
 ## Documentation
 
 - See [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for a detailed description of the AI Experience (AIX) error schema used in FHIR Nudge error responses. This schema is designed to make FHIR errors more actionable and understandable for both humans and AI tools.
+- See [docs/CLIENT.md](docs/CLIENT.md) for the Python client usage guide.
+
+---
+
+## Client Usage
+
+See [docs/CLIENT.md](docs/CLIENT.md) for the Python client usage guide.
 
 ---
 
