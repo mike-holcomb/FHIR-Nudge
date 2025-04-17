@@ -79,6 +79,7 @@ def test_read_patient():
         global failures
         failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -99,6 +100,7 @@ def test_read_nonexistent_patient():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -132,6 +134,7 @@ def test_read_invalid_resource():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -160,6 +163,7 @@ def test_read_invalid_id_format():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -188,6 +192,7 @@ def test_read_fuzzy_resource_type():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -210,6 +215,7 @@ def test_search_resource_valid():
         global failures
         failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -241,6 +247,7 @@ def test_search_resource_invalid_param():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -272,6 +279,7 @@ def test_search_resource_missing_param():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -303,6 +311,7 @@ def test_search_resource_invalid_value_format():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -327,7 +336,12 @@ def test_search_resource_duplicate_param():
             global failures
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
+        try:
+            print(f"  Raw response: {resp.text}")
+        except Exception:
+            pass
         failures += 1
 
 def test_search_resource_reserved_param():
@@ -358,6 +372,7 @@ def test_search_resource_reserved_param():
                 print(f"  Raw response: {e.response.text}")
             failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -379,6 +394,7 @@ def test_search_resource_empty_result():
         global failures
         failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
 
@@ -398,26 +414,43 @@ def test_search_resource_upstream_error():
         # global failures
         # failures += 1
     except Exception as e:
+        print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
         failures += 1
+
+def print_separator():
+    print("\n" + "-" * 60 + "\n")
 
 if __name__ == "__main__":
     proxy_proc = start_proxy()
     try:
         failures = 0
         test_read_patient()
+        print_separator()
         test_read_nonexistent_patient()
+        print_separator()
         test_read_invalid_resource()
+        print_separator()
         test_read_invalid_id_format()
+        print_separator()
         test_read_fuzzy_resource_type()
+        print_separator()
         test_search_resource_valid()
+        print_separator()
         test_search_resource_invalid_param()
+        print_separator()
         test_search_resource_missing_param()
+        print_separator()
         test_search_resource_invalid_value_format()
+        print_separator()
         test_search_resource_duplicate_param()
+        print_separator()
         test_search_resource_reserved_param()
+        print_separator()
         test_search_resource_empty_result()
+        print_separator()
         test_search_resource_upstream_error()
+        print_separator()
         if failures:
             print(f"\n{failures} test(s) failed.")
             sys.exit(1)

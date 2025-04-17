@@ -54,12 +54,28 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
     Returns:
         AIXErrorResponse instance
     """
-    error_def = CODE_ERROR_DEFS.get(error_type)
-    missing = []
     supported_param_schema = error_data.get("supported_param_schema")
     pretty_schema = None
     if supported_param_schema:
         pretty_schema = render_param_schema_markdown(supported_param_schema)
+
+    error_def = CODE_ERROR_DEFS.get(error_type)
+    missing = []
+    # Compose next_steps from template, then prepend markdown table if present
+    if error_def:
+        friendly_message = error_def["template"].format(**error_data)
+        next_steps = error_def.get("next_steps", "").format(**error_data)
+        if pretty_schema:
+            # Prepend markdown table and an extra newline for readability
+            next_steps = f"{pretty_schema}\n\n{next_steps}"
+    else:
+        friendly_message = error_data.get("diagnostics", "An error occurred.")
+        next_steps = error_data.get("next_steps", "")
+        if pretty_schema:
+            next_steps = f"{pretty_schema}\n\n{next_steps}"
+
+    error_text = error_type.replace('_', ' ').capitalize()
+    issues = error_data.get("issues", [])
     if error_def:
         required = error_def.get("required_fields", [])
         for f in required:
@@ -71,31 +87,13 @@ def render_error(error_type: str, error_data: dict) -> AIXErrorResponse:
             if f not in format_data:
                 # Patch missing diagnostics with empty string for template safety
                 format_data[f] = "" if f == "diagnostics" else f"<missing {f}>"
-        # Append pretty schema to next_steps if present
-        next_steps = error_def.get("next_steps", "").format(**format_data)
-        if pretty_schema:
-            if next_steps:
-                next_steps = pretty_schema + "\n\n" + next_steps
-            else:
-                next_steps = pretty_schema
-        friendly_message = error_def["template"].format(**format_data)
-        error_text = error_type.replace('_', ' ').capitalize()
-        issues = error_data.get("issues", [])
-        if missing:
-            extra_diag = f"Warning: Missing fields for this error: {missing}"
-            issues = list(issues) + [{
-                "severity": "information",
-                "code": "incomplete-context",
-                "diagnostics": extra_diag,
-                "details": "<missing details>"
-            }]
-    else:
-        import logging
-        logging.warning(f"render_error: Unknown error_type '{error_type}', using fallback error template.")
-        friendly_message = "An error occurred."
-        next_steps = None
-        error_text = error_type.replace('_', ' ').capitalize()
-        issues = error_data.get("issues", [])
+        extra_diag = f"Warning: Missing fields for this error: {missing}"
+        issues = list(issues) + [{
+            "severity": "information",
+            "code": "incomplete-context",
+            "diagnostics": extra_diag,
+            "details": "<missing details>"
+        }]
 
     # Patch all issues to include required fields for OperationOutcomeIssue
     patched_issues = []
