@@ -206,7 +206,7 @@ Start the proxy server using Poetry:
 poetry run python app.py
 ```
 
-The proxy will start on [http://localhost:5000](http://localhost:5000).
+The proxy will start on [http://localhost:8888](http://localhost:8888).
 
 ### Endpoints
 
