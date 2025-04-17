@@ -1,37 +1,74 @@
-from flask import Flask, request, jsonify, Response, make_response, abort, send_file
-import requests
-import difflib
-from dotenv import load_dotenv
+"""
+Flask proxy for FHIR Nudge.
+
+This module implements the Flask-based proxy between an LLM and a HAPI FHIR server.
+It exposes:
+ - /readResource/<resource>/<resource_id>
+ - /searchResource/<resource>
+ - /openapi.yaml
+
+Errors are rendered per the AIX schema.
+Environment variables:
+ - FHIR_SERVER_URL: base URL of the HAPI FHIR server (required).
+ - PROXY_PORT: port for running the proxy (default 8888).
+
+See docs/AIX_ERROR_SCHEMA.md and docs/ERROR_HANDLING_GUIDELINES.md for details.
+"""
+
+# Standard library imports
 import os
 import re
-from fhir_nudge.error_renderer import render_error
+from urllib.parse import urljoin
 
+# Third-party imports
+import requests
+import difflib
+from flask import Flask, request, jsonify, Response, make_response, abort, send_file
+from dotenv import load_dotenv
+
+# Internal imports
+from fhir_nudge.error_renderer import render_error
+from typing import Dict, List, Any, Mapping, Tuple, Optional
+
+# Initialize Flask application for proxy endpoints
 app = Flask(__name__)
 
+# Load .env file for local development
 load_dotenv()
+
+# Base URL of the HAPI FHIR server; required environment variable.
 FHIR_SERVER_URL = os.getenv("FHIR_SERVER_URL")
+
+# Regex for valid FHIR IDs: 1-64 characters of alphanumeric, hyphen, or dot.
 FHIR_ID_PATTERN = re.compile(r"^[A-Za-z0-9\-\.]{1,64}$")
 
 # TODO: Refactor capability_index (knowledgebase) into its own class for better testability and maintainability.
 
-def load_capability_statement():
+def load_capability_statement() -> Dict[str, List[Dict[str, Any]]]:
     """
-    Fetches the CapabilityStatement from the FHIR server and builds a mapping:
-    { resource_type: list([param_obj1, ...]), ... }
-    Returns an empty dict on error.
+    Fetch and parse the FHIR server's CapabilityStatement into a search parameter index.
+
+    Returns:
+        A dict mapping each resource type (str) to a list of parameter descriptor dicts,
+        each with keys 'name', 'type', 'documentation', and 'example'.
+    Exits the process if the CapabilityStatement cannot be retrieved or parsed.
     """
     try:
+        # Build URL for the FHIR server's CapabilityStatement endpoint
         metadata_url = f"{FHIR_SERVER_URL}/metadata"
         resp = requests.get(metadata_url, timeout=10)
+        # Raise HTTPError for non-2xx responses
         resp.raise_for_status()
         data = resp.json()
         index = {}
-        # Parse the CapabilityStatement for resource search params
+        # Traverse 'rest' sections to extract resource searchParam definitions
         for rest in data.get("rest", []):
             for resource in rest.get("resource", []):
                 resource_type = resource.get("type")
-                param_objs = []
+                # Collect searchParam entries for this resource
+                param_objs: List[Dict[str, Any]] = []
                 for param in resource.get("searchParam", []):
+                    # Capture standard fields for each search parameter
                     param_obj = {
                         "name": param.get("name"),
                         "type": param.get("type"),
@@ -55,37 +92,54 @@ def load_capability_statement():
         import sys
         sys.exit(1)
 
-def filter_headers(headers):
-    # Normalize header keys to lower-case for case-insensitive filtering
+def filter_headers(headers: Mapping[str, str]) -> Dict[str, str]:
+    """Remove hop-by-hop and internal headers before proxying a FHIR response."""
+    # Exclude hop-by-hop headers per HTTP/1.1 spec (RFC 7230)
     excluded = {
         'transfer-encoding', 'content-encoding', 'content-length', 'connection',
         'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'
     }
+    # Return filtered headers
     return {k: v for k, v in headers.items() if k.lower() not in excluded}
 
-capability_index = None
+# Lazy cache for capability index to avoid repeated metadata fetches
+capability_index: Dict[str, List[Dict[str, Any]]] | None = None
 
-def get_capability_index():
+def get_capability_index() -> Dict[str, List[Dict[str, Any]]]:
+    """Return the cached capability index, loading it if necessary."""
     global capability_index
     if capability_index is None:
+        # Load and cache the CapabilityStatement index
         capability_index = load_capability_statement()
     return capability_index
 
-def _prevalidate_search_resource(resource: str, query_params: dict):
+def _prevalidate_search_resource(
+    resource: str,
+    query_params: Mapping[str, str]
+) -> Tuple[bool, Optional[Response]]:
+    # TODO of shame: break this into smaller validation helpers for clarity & testability
     """
     Perform lightweight prevalidation of a searchResource request.
-    Returns (is_valid, error_response) where:
-      - is_valid: bool, True if request is valid enough to forward
-      - error_response: Flask response if invalid, else None
+
+    Args:
+        resource (str): FHIR resource type to validate.
+        query_params (Mapping[str, str]): Query parameter dictionary.
+
+    Returns:
+        Tuple[bool, Optional[Response]]: A tuple of (is_valid, error_response),
+        where is_valid indicates whether to forward to FHIR, and error_response
+        is a Flask Response for invalid requests or None if valid.
     """
     capability_idx = get_capability_index()
     valid_types = set(capability_idx.keys())
-    # 1. Resource type check
+    # 1️⃣ Resource-type validation: ensure the requested FHIR resource exists
     if resource not in valid_types:
+        # Suggest close matches for mistyped resource types
         close = difflib.get_close_matches(resource, valid_types, n=3)
         diagnostics = f"Resource type '{resource}' is not supported. Supported types: {sorted(valid_types)}."
         if close:
             diagnostics += f" Did you mean: {', '.join(close)}?"
+        # Map invalid-type error to AIX schema and build response
         error_data = {
             "resource_type": resource,
             "status_code": 400,
@@ -97,11 +151,11 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
             }],
         }
         aix_error = render_error("invalid-type", error_data)
+        # Short-circuit: return AIX error response without forwarding to FHIR
         return False, (jsonify(aix_error.model_dump()), 400)
-    # 2. Query parameter name check
+    # 2️⃣ Parameter-name validation: reject any query key not declared in the CapabilityStatement
     supported_param_objs = capability_idx[resource]
     supported_params = {p["name"] for p in supported_param_objs if p["name"]}
-
     # --- Duplicate/conflicting param check ---
     # Flask's request.args is a MultiDict; query_params may be MultiDict or dict
     param_counts = {}
@@ -131,6 +185,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
 
     unknown_params = [p for p in query_params if p not in supported_params]
     if unknown_params:
+        # Suggest the closest valid parameter name for each unknown key
         suggestions = []
         for p in unknown_params:
             close = difflib.get_close_matches(p, supported_params, n=1)
@@ -139,6 +194,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
         diagnostics = f"Unsupported parameter(s) for resource '{resource}': {unknown_params}."
         if suggestions:
             diagnostics += " Did you mean: " + ", ".join(suggestions)
+        # Include both list of valid names and detailed schema for rendering docs
         error_data = {
             "resource_type": resource,
             "status_code": 400,
@@ -153,7 +209,7 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
         }
         aix_error = render_error("invalid_param", error_data)
         return False, (jsonify(aix_error.model_dump()), 400)
-    # 3. Empty query check
+    # 3️⃣ Empty-query guard: require at least one search parameter
     if not query_params:
         diagnostics = f"No query parameters provided. Please specify at least one search parameter for resource '{resource}'."
         error_data = {
@@ -169,41 +225,21 @@ def _prevalidate_search_resource(resource: str, query_params: dict):
         }
         aix_error = render_error("missing_param", error_data)
         return False, (jsonify(aix_error.model_dump()), 400)
-    # TODO: Add value format checks, reserved param warnings, etc.
+
     return True, None
 
-def _enrich_search_resource_error(resource: str, fhir_response: requests.Response) -> tuple:
+def _enrich_search_resource_error(resource: str, fhir_response: requests.Response) -> Tuple[Response, int]:
     """
-    Handle and enrich error messages from FHIR server responses for /searchResource.
-    Returns (Flask response, HTTP status code).
-    
-    TODO: Handle invalid search parameter values (400):
-        - Identify which parameter(s) are invalid
-        - Provide expected format or allowed values
-        - Suggest corrections if possible
+    Wrap non-2xx FHIR search responses into rich AIX error payloads.
 
-    TODO: Handle unsupported/unknown search parameters (400):
-        - List unsupported parameter(s)
-        - Suggest closest valid parameters
-        - Show markdown table of supported parameters
+    Args:
+        resource (str): FHIR resource type being searched.
+        fhir_response (requests.Response): Original HTTP response from FHIR server.
 
-    TODO: Handle malformed requests (400):
-        - Show problematic part of request
-        - Suggest correct structure
-
-    TODO: Handle OperationOutcome with multiple issues (400/422):
-        - Aggregate issues in a readable format
-        - Prioritize actionable diagnostics
-
-    TODO: Handle 404 Not Found (if not treating as empty result):
-        - Explain no match for search criteria
-        - Suggest next steps
-
-    TODO: Handle 405/422 errors:
-        - Explain why the request method/entity is not allowed/processable
-        - Suggest corrections
-"""
-    # Try to parse the FHIR OperationOutcome for invalid parameter value errors
+    Returns:
+        Tuple[Response, int]: Flask Response with AIX payload and HTTP status code.
+    """
+    # Attempt to interpret the FHIR error body as an OperationOutcome
     try:
         error_body = fhir_response.json()
         if (
@@ -332,9 +368,10 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                 return jsonify(aix_error.model_dump()), fhir_response.status_code
     except Exception as ex:
         print(f"Error parsing FHIR OperationOutcome for invalid/unknown param: {ex}")
-    # Handle 405 Method Not Allowed or 422 Unprocessable Entity
+    # 4️⃣ Method Not Allowed / Unprocessable Entity: wrap 405/422 into AIX errors
     if fhir_response.status_code in (405, 422):
         diagnostics = None
+        # Attempt to extract diagnostics from OperationOutcome if present
         try:
             error_body = fhir_response.json()
             if isinstance(error_body, dict) and error_body.get("resourceType") == "OperationOutcome":
@@ -343,11 +380,13 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                 )
         except Exception:
             pass
+        # Use generic text if no OperationOutcome diagnostics found
         diagnostics = diagnostics or f"FHIR server returned status {fhir_response.status_code}: {fhir_response.text}"
         error_data = {
             "resource_type": resource,
             "status_code": fhir_response.status_code,
             "issues": [{
+                # Map 405 to 'method-not-allowed', 422 to 'unprocessable-entity'
                 "severity": "error",
                 "code": "method-not-allowed" if fhir_response.status_code == 405 else "unprocessable-entity",
                 "diagnostics": diagnostics,
@@ -358,7 +397,7 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
         }
         aix_error = render_error("invalid_param", error_data)
         return jsonify(aix_error.model_dump()), fhir_response.status_code
-    # Fallback: generic error response
+    # 5️⃣ Generic fallback: wrap any other error responses into AIX schema
     diagnostics = f"FHIR server returned status {fhir_response.status_code}: {fhir_response.text}"
     error_data = {
         "resource_type": resource,
