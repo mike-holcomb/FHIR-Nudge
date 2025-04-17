@@ -116,18 +116,30 @@ def test_read_invalid_resource():
         global failures
         failures += 1
     except requests.HTTPError as e:
-        print(f"  HTTPError: {e}")
-        if e.response is not None:
-            print(f"  Raw response: {e.response.text}")
         if e.response is not None and e.response.status_code == 400:
             try:
                 err = e.response.json()
                 diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-                print(f"  Parsed JSON: {err}")
-                diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-                print(f"  Extracted diagnostics: {diags}")
-                assert "is not supported" in diags
-                print(f"  PASS (caught expected 400, diagnostics: {diags})")
+                print(f"  HTTPError: {e}")
+                print(f"  Raw response: {e.response.text}")
+                if e.response is not None and e.response.status_code == 400:
+                    try:
+                        err = e.response.json()
+                        diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+                        print(f"  Parsed JSON: {err}")
+                        diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
+                        print(f"  Extracted diagnostics: {diags}")
+                        assert "is not supported" in diags
+                        print(f"  PASS (caught expected 400, diagnostics: {diags})")
+                    except Exception as ex:
+                        print(f"  FAIL: Could not parse diagnostics: {ex}")
+                        print(f"  Raw response: {e.response.text}")
+                        failures += 1
+                else:
+                    print(f"  FAIL: Unexpected HTTP error: {e}")
+                    if hasattr(e, 'response') and e.response is not None:
+                        print(f"  Raw response: {e.response.text}")
+                    failures += 1
             except Exception as ex:
                 print(f"  FAIL: Could not parse diagnostics: {ex}")
                 print(f"  Raw response: {e.response.text}")
@@ -398,7 +410,7 @@ def test_search_resource_reserved_param():
 
 def test_search_resource_empty_result():
     """
-    Test: Search for a Patient with a value that should return no results (should return 200 and empty Bundle).
+    Test: Search for a Patient with a value that should return no results (should return 200, empty Bundle, friendly message, and next_steps).
     """
     print("Test: Search Patient (empty result)...")
     try:
@@ -406,7 +418,14 @@ def test_search_resource_empty_result():
         bundle = client.search_resource("Patient", {"name": "NoSuchNameXYZ123"})
         assert bundle["resourceType"] == "Bundle"
         assert "entry" not in bundle or len(bundle["entry"]) == 0
-        print("  PASS (empty result)")
+        # New assertions for enhanced empty result UX
+        assert "friendly_message" in bundle
+        assert "No Patient resources matched your search criteria." in bundle["friendly_message"]
+        assert "next_steps" in bundle
+        assert "Double-check the search parameters you used" in bundle["next_steps"]
+        assert "name: NoSuchNameXYZ123" in bundle["next_steps"]
+        assert "| name | type | documentation" in bundle["next_steps"]
+        print("  PASS (empty result with friendly message and next_steps)")
     except requests.HTTPError as e:
         print(f"  FAIL: HTTP error: {e}")
         if hasattr(e, 'response') and e.response is not None:
