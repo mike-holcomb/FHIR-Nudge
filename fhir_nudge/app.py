@@ -202,7 +202,7 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
     TODO: Handle 405/422 errors:
         - Explain why the request method/entity is not allowed/processable
         - Suggest corrections
-
+"""
     # Implementation will parse the FHIR OperationOutcome and enrich as needed.
     # For now, return a generic error response as a placeholder.
     diagnostics = f"FHIR server returned status {fhir_response.status_code}: {fhir_response.text}"
