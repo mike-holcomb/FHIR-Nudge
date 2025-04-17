@@ -124,6 +124,7 @@ FHIR Nudge uses a standardized, actionable error handling system designed for bo
 - **The error renderer formats and standardizes** the response, using templates for friendly messages and next steps, but does not invent diagnostics.
 - **Diagnostics are always explicit and actionable**—for example, if a resource type is not supported, diagnostics will say so and list supported types. If a typo is detected, diagnostics will suggest corrections.
 - **No legacy or top-level ad-hoc fields** like `supported_types` or `did_you_mean`—all context is in the `issues` array in the response.
+- **Details field:** Each issue may include a `details` property for structured, machine-friendly context alongside diagnostics.
 
 See [docs/ERROR_HANDLING_GUIDELINES.md](docs/ERROR_HANDLING_GUIDELINES.md) for implementation details and [docs/AIX_ERROR_SCHEMA.md](docs/AIX_ERROR_SCHEMA.md) for the schema.
 
