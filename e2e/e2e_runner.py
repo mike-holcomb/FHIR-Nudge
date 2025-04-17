@@ -122,6 +122,7 @@ def test_read_invalid_resource():
         if e.response is not None and e.response.status_code == 400:
             try:
                 err = e.response.json()
+                diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
                 print(f"  Parsed JSON: {err}")
                 diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
                 print(f"  Extracted diagnostics: {diags}")
@@ -186,7 +187,7 @@ def test_read_fuzzy_resource_type():
                 assert "Did you mean:" in diags
                 print(f"  PASS (caught expected 400, diagnostics: {diags})")
             except Exception as ex:
-                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  FAIL: Could not parse diagnostics or markdown: {ex}")
                 print(f"  Raw response: {e.response.text}")
                 failures += 1
         else:
@@ -224,12 +225,12 @@ def test_search_resource_valid():
 
 def test_search_resource_invalid_param():
     """
-    Test: Search with an invalid parameter (should return 400 with actionable diagnostics).
+    Test: Search with an invalid parameter (should return 400 with actionable diagnostics and markdown guidance).
     """
-    print("Test: Search Patient (invalid param)...")
+    print("Test: Search Patient with invalid param...")
     try:
         client = FhirNudgeClient(PROXY_URL)
-        client.search_resource("Patient", {"nme": "John"})
+        client.search_resource("Patient", {"foobarbaz": "abc"})
         print("  FAIL: Expected HTTP 400, got success")
         global failures
         failures += 1
@@ -238,10 +239,13 @@ def test_search_resource_invalid_param():
             try:
                 err = e.response.json()
                 diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-                assert "unsupported" in diags.lower() or "did you mean" in diags.lower()
+                # Check diagnostics for invalid param
+                assert "foobarbaz" in diags
+                # Check for markdown table in next_steps
+                assert "| name | type | documentation" in err.get("next_steps", "")
                 print(f"  PASS (caught expected 400, diagnostics: {diags})")
             except Exception as ex:
-                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  FAIL: Could not parse diagnostics or markdown: {ex}")
                 print(f"  Raw response: {e.response.text}")
                 failures += 1
         else:
@@ -258,7 +262,7 @@ def test_search_resource_missing_param():
     """
     Test: Search with no parameters (should return 400 and actionable diagnostics).
     """
-    print("Test: Search Patient (missing param)...")
+    print("Test: Search Patient with no params...")
     try:
         client = FhirNudgeClient(PROXY_URL)
         client.search_resource("Patient", {})
@@ -270,10 +274,13 @@ def test_search_resource_missing_param():
             try:
                 err = e.response.json()
                 diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-                assert "no query parameters provided" in diags.lower() or "missing" in diags.lower()
+                # Check diagnostics for missing param
+                assert "parameter" in diags.lower() or "missing" in diags.lower()
+                # Check for markdown table in next_steps
+                assert "| name | type | documentation" in err.get("next_steps", "")
                 print(f"  PASS (caught expected 400, diagnostics: {diags})")
             except Exception as ex:
-                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  FAIL: Could not parse diagnostics or markdown: {ex}")
                 print(f"  Raw response: {e.response.text}")
                 failures += 1
         else:
@@ -290,9 +297,10 @@ def test_search_resource_invalid_value_format():
     """
     Test: Search with a parameter that has an invalid value format (should return 400 and format diagnostics).
     """
-    print("Test: Search Patient (invalid value format)...")
+    print("Test: Search Patient with invalid value format...")
     try:
         client = FhirNudgeClient(PROXY_URL)
+        # Use a date parameter with an invalid format
         client.search_resource("Patient", {"birthdate": "notadate"})
         print("  FAIL: Expected HTTP 400, got success")
         global failures
@@ -302,10 +310,16 @@ def test_search_resource_invalid_value_format():
             try:
                 err = e.response.json()
                 diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-                assert "expects a date" in diags.lower() or "format" in diags.lower()
+                # Check diagnostics for invalid value
+                assert (
+                    "invalid" in diags.lower()
+                    and ("format" in diags.lower() or "date/time" in diags.lower() or "quantity format" in diags.lower())
+                )
+                # Check for markdown table in next_steps
+                assert "| name | type | documentation" in err.get("next_steps", "")
                 print(f"  PASS (caught expected 400, diagnostics: {diags})")
             except Exception as ex:
-                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  FAIL: Could not parse diagnostics or markdown: {ex}")
                 print(f"  Raw response: {e.response.text}")
                 failures += 1
         else:
@@ -323,15 +337,16 @@ def test_search_resource_duplicate_param():
     Test: Search with a duplicate/conflicting parameter (should return 400 and duplicate diagnostics).
     Note: requests will collapse duplicate keys unless you use a list of tuples.
     """
-    print("Test: Search Patient (duplicate/conflicting param)...")
+    print("Test: Search Patient with duplicate param...")
     try:
         client = FhirNudgeClient(PROXY_URL)
-        # Use list of tuples to simulate duplicate params: id=123&id=456
-        resp = requests.get(f"{PROXY_URL}/searchResource/Patient", params=[("id", "123"), ("id", "456")])
+        # Use a list of tuples to send duplicate params
+        resp = requests.get(f"{PROXY_URL}/searchResource/Patient", params=[("name", "John"), ("name", "Jane")])
         if resp.status_code == 400:
             err = resp.json()
             diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-            assert "duplicate" in diags.lower() or "more than once" in diags.lower()
+            assert "duplicate" in diags.lower() or "conflict" in diags.lower() or "multiple" in diags.lower()
+            assert "| name | type | documentation" in err.get("next_steps", "")
             print(f"  PASS (caught expected 400, diagnostics: {diags})")
         else:
             print(f"  FAIL: Expected HTTP 400, got {resp.status_code}")
@@ -341,17 +356,13 @@ def test_search_resource_duplicate_param():
     except Exception as e:
         print("\033[91m**FAIL**\033[0m")
         print(f"  FAIL: Unexpected error: {e}")
-        try:
-            print(f"  Raw response: {resp.text}")
-        except Exception:
-            pass
         failures += 1
 
 def test_search_resource_reserved_param():
     """
     Test: Search with a reserved/unknown parameter (should return 400 and reserved param diagnostics).
     """
-    print("Test: Search Patient (reserved param)...")
+    print("Test: Search Patient with reserved/unknown param...")
     try:
         client = FhirNudgeClient(PROXY_URL)
         client.search_resource("Patient", {"_internal": "foo"})
@@ -363,10 +374,16 @@ def test_search_resource_reserved_param():
             try:
                 err = e.response.json()
                 diags = " ".join(iss.get("diagnostics", "") for iss in err.get("issues", []))
-                assert "reserved" in diags.lower()
+                assert (
+                    "reserved" in diags.lower()
+                    or "unknown" in diags.lower()
+                    or "not supported" in diags.lower()
+                    or "unsupported" in diags.lower()
+                )
+                assert "| name | type | documentation" in err.get("next_steps", "")
                 print(f"  PASS (caught expected 400, diagnostics: {diags})")
             except Exception as ex:
-                print(f"  FAIL: Could not parse diagnostics: {ex}")
+                print(f"  FAIL: Could not parse diagnostics or markdown: {ex}")
                 print(f"  Raw response: {e.response.text}")
                 failures += 1
         else:
@@ -444,12 +461,12 @@ if __name__ == "__main__":
         print_separator()
         test_search_resource_missing_param()
         print_separator()
-        # test_search_resource_invalid_value_format() TODO: Implement logic later
-        # print_separator()
+        test_search_resource_invalid_value_format()
+        print_separator()
         test_search_resource_duplicate_param()
         print_separator()
-        # test_search_resource_reserved_param() TODO: Implement logic later
-        # print_separator()
+        test_search_resource_reserved_param()
+        print_separator()
         test_search_resource_empty_result()
         print_separator()
         test_search_resource_upstream_error()
