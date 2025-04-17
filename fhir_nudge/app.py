@@ -594,8 +594,8 @@ def search_resource(resource: str) -> Tuple[Response, int]:
     except Exception:
         pass
     filtered_headers = filter_headers(resp.headers)
-    # 5️⃣ Return successful Bundle with filtered headers
-    return Response(resp.content, status=resp.status_code, headers=filtered_headers)
+    # 5️⃣ Return successful Bundle with filtered headers and explicit status code
+    return Response(resp.content, status=resp.status_code, headers=filtered_headers), resp.status_code
 
 @app.route('/openapi.yaml')
 def openapi_yaml():
