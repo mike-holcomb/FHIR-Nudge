@@ -10,6 +10,7 @@ servers:
 paths:
   /readResource/{resource}/{resource_id}:
     get:
+      operationId: read_resource
       summary: Retrieve a FHIR resource by type and ID
       description: >
         Fetches a resource of the specified FHIR type and ID from the backend server.
@@ -123,6 +124,65 @@ paths:
                         severity: "error"
                         details: ""
                     status_code: 502
+  /searchResource/{resource}:
+    get:
+      operationId: search_resource
+      summary: Search for FHIR resources by type and parameters
+      description: |
+        Searches for resources of the specified FHIR type using query parameters.
+        
+        ---
+        **LLM Guidance:**
+        - This endpoint supports dynamic, real-time validation and will return actionable error messages if a query is incomplete, ambiguous, or contains common mistakes.
+        - If a parameter is misspelled or unsupported, the response will include a markdown table of supported parameters for the resource, as well as suggestions for correction.
+        - If the search yields no results, the response will include a “soft error” with guidance for refining the query.
+        - All error responses conform to the AIXErrorResponse schema, which is designed for both LLMs and humans.
+        - See the `next_steps` field in error responses for markdown tables and actionable suggestions.
+      parameters:
+        - name: resource
+          in: path
+          required: true
+          schema:
+            type: string
+          description: |
+            The FHIR resource type to search (e.g., `Patient`, `Observation`).
+            ---
+            **LLM Guidance:**
+            Use the `/metadata` endpoint or see the markdown table in error responses for a list of supported resource types.
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Patient name to search for.
+            ---
+            **LLM Guidance:**
+            This is a fuzzy match on patient names. For more precise queries, use additional parameters like `family` or `given`.
+      responses:
+        '200':
+          description: Successful search, returns a FHIR Bundle of matching resources.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FHIRBundle'
+              examples:
+                typical:
+                  summary: Typical search result
+                  value:
+                    resourceType: Bundle
+                    entry:
+                      - resource:
+                          resourceType: Patient
+                          id: abc
+                      - resource:
+                          resourceType: Patient
+                          id: def
+                empty:
+                  summary: No results found
+                  value:
+                    resourceType: Bundle
+                    entry: []
 components:
   schemas:
     AIXErrorResponse:
@@ -169,3 +229,6 @@ components:
         status_code:
           type: integer
           description: HTTP status code associated with the error.
+    FHIRBundle:
+      type: object
+      description: FHIR Bundle

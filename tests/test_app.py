@@ -173,3 +173,116 @@ def test_missing_required_fields_returns_clear_error(client):
     # Should mention missing required fields in diagnostics
     issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
     assert "Missing fields" in issue_diags or "missing" in issue_diags
+
+def test_search_resource_invalid_param(client, patch_fhir_requests):
+    def fake_metadata(url, *args, **kwargs):
+        class FakeResp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {
+                    "rest": [{
+                        "resource": [
+                            {"type": "Patient", "searchParam": [
+                                {"name": "name", "type": "string", "documentation": "Patient name"},
+                                {"name": "gender", "type": "string", "documentation": "Gender of the patient"},
+                            ]}
+                        ]
+                    }]
+                }
+        return FakeResp()
+    patch_fhir_requests.side_effect = fake_metadata
+    resp = client.get('/searchResource/Patient?nme=John')
+    assert resp.status_code == 400
+    # Assert response is AIXErrorSchema
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    # Assert error type and actionable diagnostics
+    assert resp.json["error"].lower().startswith("invalid param")
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "unsupported parameter" in issue_diags.lower()
+    assert "did you mean" in issue_diags.lower() or "suggestion" in issue_diags.lower() or "close" in issue_diags.lower()
+    # Assert presence of actionable guidance (markdown table)
+    assert "| name | type | documentation" in resp.json.get("next_steps", "")
+
+def test_search_resource_missing_param(client, patch_fhir_requests):
+    def fake_metadata(url, *args, **kwargs):
+        class FakeResp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {
+                    "rest": [{
+                        "resource": [
+                            {"type": "Patient", "searchParam": [
+                                {"name": "name", "type": "string", "documentation": "Patient name"},
+                                {"name": "gender", "type": "string", "documentation": "Gender of the patient"},
+                            ]}
+                        ]
+                    }]
+                }
+        return FakeResp()
+    patch_fhir_requests.side_effect = fake_metadata
+    resp = client.get('/searchResource/Patient')
+    assert resp.status_code == 400
+    assert set(resp.json.keys()) >= {"error", "friendly_message", "issues", "status_code"}
+    assert resp.json["error"].lower().startswith("missing param")
+    issue_diags = " ".join([iss.get("diagnostics", "") for iss in resp.json["issues"]])
+    assert "no query parameters provided" in issue_diags.lower() or "missing" in issue_diags.lower()
+    assert "| name | type | documentation" in resp.json.get("next_steps", "")
+
+def test_search_resource_invalid_type(client, patch_fhir_requests):
+    def fake_metadata(url, *args, **kwargs):
+        class FakeResp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {
+                    "rest": [{
+                        "resource": [
+                            {"type": "Patient", "searchParam": [
+                                {"name": "name", "type": "string", "documentation": "Patient name"}
+                            ]}
+                        ]
+                    }]
+                }
+        return FakeResp()
+    patch_fhir_requests.side_effect = fake_metadata
+    resp = client.get('/searchResource/NotAType?name=John')
+    assert resp.status_code == 400
+    assert resp.json["error"].lower().startswith("invalid-type")
+    assert "supported_param_schema" not in resp.json
+    assert "supported_params" not in resp.json
+
+def test_search_resource_valid_query(client, patch_fhir_requests):
+    def fake_metadata(url, *args, **kwargs):
+        class FakeResp:
+            def raise_for_status(self): pass
+            def json(self):
+                return {
+                    "rest": [{
+                        "resource": [
+                            {"type": "Patient", "searchParam": [
+                                {"name": "name", "type": "string", "documentation": "Patient name"},
+                                {"name": "gender", "type": "string", "documentation": "Gender of the patient"},
+                            ]}
+                        ]
+                    }]
+                }
+        return FakeResp()
+
+    class MockFHIRResp:
+        status_code = 200
+        content = b'{"resourceType": "Bundle", "entry": [{"resource": {"resourceType": "Patient", "id": "abc"}}]}'
+        headers = {"Content-Type": "application/fhir+json"}
+        def raise_for_status(self): pass
+        def json(self):
+            return {"resourceType": "Bundle", "entry": [{"resource": {"resourceType": "Patient", "id": "abc"}}]}
+
+    def side_effect(url, *args, **kwargs):
+        if url.endswith("/metadata"):
+            return fake_metadata(url)
+        return MockFHIRResp()
+
+    patch_fhir_requests.side_effect = side_effect
+    resp = client.get('/searchResource/Patient?name=John')
+    assert resp.status_code == 200
+    assert resp.json["resourceType"] == "Bundle"
+    assert resp.json["entry"][0]["resource"]["resourceType"] == "Patient"
+    assert resp.json["entry"][0]["resource"]["id"] == "abc"
