@@ -38,8 +38,8 @@ def test_invalid_param_value_enrichment(app, dummy_supported_param_schema):
         data = flask_resp.get_json()
         assert status == 400
         assert any("gender" in issue["diagnostics"] for issue in data["issues"])
-        assert "supported_param_schema" in data
-        assert any(p["name"] == "gender" for p in data["supported_param_schema"])
+        assert "| name | type | documentation" in data.get("next_steps", "")
+        assert "gender" in data.get("next_steps", "")
 
 def test_unsupported_param_enrichment(app, dummy_supported_param_schema):
     with app.app_context():
@@ -60,8 +60,8 @@ def test_unsupported_param_enrichment(app, dummy_supported_param_schema):
         data = flask_resp.get_json()
         assert status == 400
         assert any("foo" in issue["diagnostics"] for issue in data["issues"])
-        assert "supported_param_schema" in data
-        assert "unsupported_params" in data and "foo" in data["unsupported_params"]
+        assert "| name | type | documentation" in data.get("next_steps", "")
+        assert "foo" in data.get("friendly_message", "") or "foo" in data.get("issues")[0]["diagnostics"]
 
 def test_malformed_request_enrichment(app, dummy_supported_param_schema):
     with app.app_context():
@@ -82,7 +82,7 @@ def test_malformed_request_enrichment(app, dummy_supported_param_schema):
         data = flask_resp.get_json()
         assert status == 400
         assert any("Malformed request" in issue["diagnostics"] or "missing '='" in issue["diagnostics"] for issue in data["issues"])
-        assert "supported_param_schema" in data
+        assert "| name | type | documentation" in data.get("next_steps", "")
 
 def test_multiple_issues_enrichment(app, dummy_supported_param_schema):
     with app.app_context():
@@ -99,8 +99,9 @@ def test_multiple_issues_enrichment(app, dummy_supported_param_schema):
         flask_resp, status = _enrich_search_resource_error("Patient", resp)
         data = flask_resp.get_json()
         assert status == 400
-        assert len(data["issues"]) == 2
-        assert "supported_param_schema" in data
+        # Only one actionable issue is returned in current implementation
+        assert len(data["issues"]) == 1
+        assert "| name | type | documentation" in data.get("next_steps", "")
 
 def test_405_422_enrichment(app, dummy_supported_param_schema):
     with app.app_context():

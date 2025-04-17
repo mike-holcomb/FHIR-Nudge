@@ -234,6 +234,7 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                     "issues": issues,
                     "supported_param_schema": supported_param_objs,
                     "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                    "diagnostics": issues[0]["diagnostics"] if issues else None,
                 }
                 aix_error = render_error("invalid_param", error_data)
                 return jsonify(aix_error.model_dump()), fhir_response.status_code
@@ -269,6 +270,7 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                     "supported_param_schema": supported_param_objs,
                     "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
                     "issues": issues,
+                    "diagnostics": issues[0]["diagnostics"] if issues else None,
                 }
                 aix_error = render_error("invalid_param", error_data)
                 return jsonify(aix_error.model_dump()), fhir_response.status_code
@@ -296,6 +298,7 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                     "issues": issues,
                     "supported_param_schema": supported_param_objs,
                     "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                    "diagnostics": issues[0]["diagnostics"] if issues else None,
                 }
                 aix_error = render_error("invalid_param", error_data)
                 return jsonify(aix_error.model_dump()), fhir_response.status_code
@@ -323,6 +326,7 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                     "issues": issues,
                     "supported_param_schema": supported_param_objs,
                     "supported_params": [p["name"] for p in supported_param_objs if p["name"]],
+                    "diagnostics": issues[0]["diagnostics"] if issues else None,
                 }
                 aix_error = render_error("invalid_param", error_data)
                 return jsonify(aix_error.model_dump()), fhir_response.status_code
@@ -349,6 +353,8 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
                 "diagnostics": diagnostics,
                 "details": "Request method not allowed or entity unprocessable. See diagnostics."
             }],
+            "diagnostics": diagnostics,
+            "supported_param_schema": get_capability_index().get(resource, []),
         }
         aix_error = render_error("invalid_param", error_data)
         return jsonify(aix_error.model_dump()), fhir_response.status_code
@@ -362,6 +368,8 @@ def _enrich_search_resource_error(resource: str, fhir_response: requests.Respons
             "code": "unknown",
             "diagnostics": diagnostics
         }],
+        "diagnostics": diagnostics,
+        "supported_param_schema": get_capability_index().get(resource, []),
     }
     aix_error = render_error("unknown_error", error_data)
     return jsonify(aix_error.model_dump()), fhir_response.status_code
